@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Environment & secrets
+.env
+credentials/
+
+# Build output
+dist/
+dist-ssr/
+
+# Uploads
+uploads/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Claude Code local settings
+.claude/
+
+# Windows artifacts
+nul
+
+# Editor
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+*.local

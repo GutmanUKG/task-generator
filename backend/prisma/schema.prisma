@@ -1,0 +1,79 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url = env("DATABASE_URL")
+}
+//Пользователи
+model User {
+  id Int @id @default(autoincrement())
+  email String @unique
+  password String
+  name String
+  role String @default("manager") //admin,manager,executor
+  createdAt DateTime @default(now())
+
+  projects Project[]
+  specifications Specification[]
+}
+// Проекты
+model Project {
+  id Int @id @default(autoincrement())
+  name String
+  description String? @db.Text
+  createdAt DateTime @default(now())
+
+  userId Int
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  specifications Specification[]
+}
+// Технические задания
+model Specification{
+  id Int @id @default(autoincrement())
+  title String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  projectId Int
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  userId Int
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  sections Section[]
+}
+// Разделы ТЗ
+model Section{
+  id Int @id @default(autoincrement())
+  title String
+  position Int @default(0)
+
+  specificationId Int
+  specification Specification @relation(fields: [specificationId], references: [id], onDelete: Cascade)
+
+  items Item[]
+}
+// Пункты ТЗ
+
+model Item{
+  id Int @id @default(autoincrement())
+  content String @db.Text
+  position Int @default(0)
+  timeEstimate Int? //Оценка времени в минутах
+
+  sectionId Int
+  section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  attachments Attachment[]
+}
+// Вложения
+model Attachment{
+  id Int @id @default(autoincrement())
+  filename String
+  path String
+  mimetype String
+  size Int
+  createdAt DateTime @default(now())
+  itemId Int
+  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+}
