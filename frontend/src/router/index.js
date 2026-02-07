@@ -41,8 +41,8 @@ const routers = [
                 component: () => import('../pages/ProjectsPage.vue')
             },
             {
-                path: 'projects/:id',
-                component: () => import('../pages/ProjectPage.vue')
+              path: 'projects/:id',
+              component : () => import('../pages/ProjectPage.vue')
             },
             {
                 path: 'record',

@@ -103,7 +103,6 @@ async function deleteProject(id) {
 }
 </script>
 
-
 <template>
   <div>
     <div class="flex justify-between items-center mb-6">
@@ -115,6 +114,7 @@ async function deleteProject(id) {
     </div>
 
     <!-- Форма создания/редактирования (модальное окно) -->
+
     <div v-if="showForm" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div class="bg-white rounded-lg p-6 w-full max-w-md">
         <h2 class="text-xl font-bold mb-4">

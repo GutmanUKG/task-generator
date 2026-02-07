@@ -1,6 +1,6 @@
 const express = require('express')
 const { authenticate } = require('../middleware/auth')
-const { generate, getById, getAll } = require('../controllers/specificationController')
+const { generate, getById, getAll, update } = require('../controllers/specificationController')
 
 const router = express.Router()
 
@@ -10,5 +10,5 @@ router.use(authenticate)
 router.post('/generate', generate)
 router.get('/', getAll)
 router.get('/:id', getById)
-
+router.put('/:id', update)
 module.exports = router

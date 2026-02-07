@@ -150,7 +150,82 @@ async function getAll(req, res) {
         res.status(500).json({ error: 'Ошибка сервера' })
     }
 }
+/**
+ * PUT /api/specifications/:id
+ *
+ * Обновить ТЗ: название, секции и пункты
+ *
+ * Стратегия обновления:
+ * 1. Удаляем все старые секции (каскадно удалятся пункты)
+ * 2. Создаём новые секции и пункты из тела запроса
+ *
+ * Почему удаляем и создаём заново, а не обновляем по одному?
+ * - Пользователь мог добавить/удалить секции и пункты
+ * - Мог поменять порядок
+ * - Проще пересоздать, чем отслеживать каждое изменение
+ * - Prisma делает всё в одной транзакции — безопасно
+ */
 
+async function  update(req, res) {
+    try{
+        const id = parseInt(req.params.id)
+        const {title, sections} = req.body
+
+        //Проверка что ТЗ существует и принадлежит пользователю
+        const existing = await prisma.specification.findFirst({
+            where: {id, userId: req.userId}
+        })
+        if(!existing) {
+            return res.status(404).json({
+                error: 'ТЗ не найдено'
+            })
+        }
+        // ========================================
+        // Транзакция: удаляем старые секции + обновляем ТЗ
+        //
+        // prisma.$transaction — гарантирует что либо ВСЕ
+        // операции выполнятся, либо НИ ОДНА (атомарность)
+        // ========================================
+        const update = await prisma.$transaction(async (tx) =>{
+            // Удаляем старые секции (items удалятся каскадно)
+            await tx.section.deleteMany({
+                where : {specificationId: id}
+            })
+            //Обновляем заголовок и создаем новые секции
+            return tx.specification.update({
+                where: {id},
+                data: {
+                    title,
+                    sections: {
+                      create : sections.map((section, sIdx) => ({
+                          title: section.title,
+                          position: sIdx,
+                          items: {
+                              create: section.items.map((item, iIdx) => ({
+                                  content: item.content,
+                                  timeEstimate: item.timeEstimate || null,
+                                  position: iIdx
+                              }))
+                          }
+                      }))
+                    }
+                },
+                include: {
+                    sections: {
+                        orderBy: {position: 'asc'},
+                        include: {
+                            items: {orderBy : {position : 'asc'}}
+                        }
+                    }
+                }
+            })
+        })
+        res.json(update)
+    }catch (error) {
+        console.error('Ошибка обновления ТЗ:', error)
+        res.status(500).json({ error: 'Ошибка сервера' })
+    }
+}
 // Создать ТЗ
 // async function create(req, res) {
 //     try {
@@ -195,4 +270,4 @@ async function getAll(req, res) {
 //     }
 // }
 
-module.exports = {generate,  getById, getAll }
+module.exports = {generate,  getById, getAll, update }

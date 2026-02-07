@@ -2147,11 +2147,236 @@ async function deleteProject(id) {
 </template>
 ```
 
+## Урок 10.2: Детальная страница проекта ✅
+
+### Теория
+
+Сейчас на странице проектов есть ссылка "Открыть", но она ведёт в никуда. Нужно:
+1. Создать страницу `ProjectPage.vue` — детальный просмотр проекта со списком его ТЗ
+2. Добавить роут `projects/:id` в роутер
+3. Обновить `projectController.getOne` — чтобы возвращал проект вместе со спецификациями
+
+### Шаг 1: Обновить контроллер проектов (Backend)
+
+В `src/controllers/projectController.js` обнови функцию `getOne` — добавь `include` чтобы Prisma подтягивала связанные спецификации с секциями и пунктами:
+
+```javascript
+// Получить один проект
+async function getOne(req, res) {
+    try {
+        const project = await prisma.project.findFirst({
+            where: {
+                id: parseInt(req.params.id),
+                userId: req.userId
+            },
+            // ========================================
+            // include — подтягиваем связанные данные
+            //
+            // Без include: { id, name, description }
+            // С include: { id, name, description, specifications: [...] }
+            //
+            // Вложенный include — подтягиваем секции внутри ТЗ,
+            // а внутри секций — пункты
+            // ========================================
+            include: {
+                specifications: {
+                    orderBy: { createdAt: 'desc' },
+                    include: {
+                        sections: {
+                            orderBy: { position: 'asc' },
+                            include: {
+                                items: { orderBy: { position: 'asc' } }
+                            }
+                        }
+                    }
+                }
+            }
+        })
+
+        if (!project) {
+            return res.status(404).json({ error: 'Проект не найден' })
+        }
+
+        res.json(project)
+    } catch (error) {
+        res.status(500).json({ error: 'Ошибка сервера' })
+    }
+}
+```
+
+### Шаг 2: Страница проекта (Frontend)
+
+Создай файл `src/pages/ProjectPage.vue`:
+
+```vue
+<script setup>
+import { ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
+import api from '../api'
+
+const route = useRoute()
+const project = ref(null)
+const loading = ref(true)
+const error = ref('')
+
+// ========================================
+// При открытии — загружаем проект по ID из URL
+//
+// route.params.id — берём :id из адреса /projects/5
+// ========================================
+onMounted(async () => {
+  try {
+    const response = await api.get(`/projects/${route.params.id}`)
+    project.value = response.data
+  } catch (e) {
+    error.value = e.response?.data?.error || 'Ошибка загрузки проекта'
+  } finally {
+    loading.value = false
+  }
+})
+
+// Форматирование минут в "X ч Y мин"
+function formatTime(minutes) {
+  if (!minutes) return ''
+  if (minutes < 60) return `${minutes} мин`
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return m ? `${h} ч ${m} мин` : `${h} ч`
+}
+</script>
+
+<template>
+  <div class="max-w-4xl mx-auto">
+    <div v-if="loading" class="text-center py-12 text-gray-500">Загрузка...</div>
+
+    <div v-else-if="error" class="bg-red-100 text-red-700 p-4 rounded">{{ error }}</div>
+
+    <div v-else-if="project">
+      <!-- Навигация назад -->
+      <div class="mb-6">
+        <router-link to="/projects" class="text-blue-500 hover:text-blue-700 text-sm">
+          &larr; Все проекты
+        </router-link>
+      </div>
+
+      <h1 class="text-2xl font-bold mb-2">{{ project.name }}</h1>
+      <p v-if="project.description" class="text-gray-500 mb-6">{{ project.description }}</p>
+
+      <!-- Заголовок секции ТЗ + кнопка создания -->
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold">Технические задания</h2>
+        <router-link to="/record"
+          class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 text-sm">
+          + Создать ТЗ
+        </router-link>
+      </div>
+
+      <!-- Пустой список -->
+      <div v-if="project.specifications.length === 0"
+        class="text-center py-8 text-gray-500 bg-white rounded-lg shadow">
+        <p>ТЗ пока нет</p>
+        <p class="text-sm mt-1">Запишите голос и создайте первое техническое задание</p>
+      </div>
+
+      <!-- Список ТЗ проекта -->
+      <div v-else class="space-y-4">
+        <router-link v-for="spec in project.specifications" :key="spec.id"
+          :to="`/specifications/${spec.id}`"
+          class="block bg-white rounded-lg shadow p-5 hover:shadow-md transition-shadow">
+          <div class="flex justify-between items-start">
+            <div>
+              <h3 class="font-semibold">{{ spec.title }}</h3>
+              <p class="text-sm text-gray-400 mt-1">
+                {{ spec.sections.length }} разделов &middot;
+                {{ new Date(spec.createdAt).toLocaleDateString('ru') }}
+              </p>
+            </div>
+            <span class="text-sm text-gray-500">
+              {{ formatTime(spec.sections.reduce((sum, s) =>
+                sum + s.items.reduce((iSum, item) => iSum + (item.timeEstimate || 0), 0), 0)) }}
+            </span>
+          </div>
+        </router-link>
+      </div>
+    </div>
+  </div>
+</template>
+```
+
+### Шаг 3: Добавить роут
+
+В `src/router/index.js` добавь после роута `projects`:
+
+```javascript
+{
+    path: 'projects/:id',
+    component: () => import('../pages/ProjectPage.vue')
+},
+```
+
+### Проверка
+
+1. Перейди на страницу проектов
+2. Нажми "Открыть" у любого проекта
+3. Должна открыться детальная страница с названием, описанием и списком ТЗ
+
 ---
 
 # ЧАСТЬ 11: UI ТЕХНИЧЕСКИХ ЗАДАНИЙ ✅
 
-## Урок 11.1: Создание ТЗ из голосового текста ✅
+## Урок 11.1: Кнопка "Создать ТЗ" в голосовом вводе ✅
+
+### Теория
+
+Сейчас `SpeechRecorder` умеет записывать речь и показывать текст, но не умеет передавать этот текст дальше. Нужно добавить:
+1. Кнопку "Создать ТЗ" — появляется когда есть записанный текст
+2. `emit('transcriptReady', text)` — событие для родительского компонента
+3. `RecordPage` ловит это событие, сохраняет текст в `sessionStorage` и перенаправляет на `NewSpecificationPage`
+
+### Шаг 1: Обновить SpeechRecorder.vue
+
+В `src/components/SpeechRecorder.vue` добавь:
+
+**В `<script setup>` — объявление события и функция:**
+
+```javascript
+// ========================================
+// defineEmits — объявляем события компонента
+//
+// Родительский компонент (RecordPage) сможет слушать:
+// <SpeechRecorder @transcriptReady="onTranscriptReady" />
+// ========================================
+const emit = defineEmits(['transcriptReady'])
+
+// Передать текст родителю для создания ТЗ
+function useTranscript() {
+  if (transcript.value) {
+    emit('transcriptReady', transcript.value)
+  }
+}
+```
+
+**В `<template>` — кнопка между "Остановить" и "Очистить":**
+
+```html
+<button
+    v-if="transcript"
+    @click="useTranscript"
+    class="px-6 py-3 rounded bg-green-500 hover:bg-green-600 text-white font-medium"
+>
+  Создать ТЗ
+</button>
+```
+
+### Проверка
+
+1. Запиши голос
+2. Появится зелёная кнопка "Создать ТЗ"
+3. Нажми — тебя перенаправит на страницу создания ТЗ с текстом
+
+---
+
+## Урок 11.2: Создание ТЗ из голосового текста ✅
 
 ### Теория
 
@@ -2394,6 +2619,426 @@ async function save() {
   </div>
 </template>
 ```
+
+## Урок 11.3: Страница просмотра ТЗ ✅
+
+### Теория
+
+После сохранения ТЗ пользователь перенаправляется на `/specifications/:id`. Сейчас `SpecificationPage.vue` пустая — нужно создать страницу для просмотра готового ТЗ с разделами, пунктами и оценками времени.
+
+### Шаг 1: Создать SpecificationPage.vue
+
+Замени содержимое файла `src/pages/SpecificationPage.vue`:
+
+```vue
+<script setup>
+import { ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
+import api from '../api'
+
+const route = useRoute()
+const spec = ref(null)
+const loading = ref(true)
+const error = ref('')
+
+// ========================================
+// Загружаем ТЗ по ID из URL
+//
+// GET /api/specifications/:id
+// Возвращает: { title, sections: [{ title, items: [...] }] }
+// ========================================
+onMounted(async () => {
+  try {
+    const response = await api.get(`/specifications/${route.params.id}`)
+    spec.value = response.data
+  } catch (e) {
+    error.value = e.response?.data?.error || 'Ошибка загрузки ТЗ'
+  } finally {
+    loading.value = false
+  }
+})
+
+// Форматирование минут в "X ч Y мин"
+function formatTime(minutes) {
+  if (!minutes) return ''
+  if (minutes < 60) return `${minutes} мин`
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return m ? `${h} ч ${m} мин` : `${h} ч`
+}
+
+// Суммарное время всех пунктов
+function totalTime() {
+  if (!spec.value) return 0
+  return spec.value.sections.reduce((sum, s) =>
+    sum + s.items.reduce((iSum, item) => iSum + (item.timeEstimate || 0), 0), 0)
+}
+</script>
+
+<template>
+  <div class="max-w-4xl mx-auto">
+    <div v-if="loading" class="text-center py-12 text-gray-500">Загрузка...</div>
+
+    <div v-else-if="error" class="bg-red-100 text-red-700 p-4 rounded">{{ error }}</div>
+
+    <div v-else-if="spec">
+      <!-- Заголовок + общее время -->
+      <div class="flex items-center justify-between mb-6">
+        <h1 class="text-2xl font-bold">{{ spec.title }}</h1>
+        <span class="text-sm text-gray-500">
+          Общее время: {{ formatTime(totalTime()) }}
+        </span>
+      </div>
+
+      <!-- Разделы -->
+      <div v-for="(section, sIdx) in spec.sections" :key="section.id"
+        class="bg-white rounded-lg shadow p-6 mb-4">
+        <h2 class="text-lg font-semibold mb-4">{{ sIdx + 1 }}. {{ section.title }}</h2>
+
+        <!-- Пункты раздела -->
+        <div v-for="(item, iIdx) in section.items" :key="item.id"
+          class="flex justify-between items-start py-2 border-b last:border-0">
+          <span class="text-sm">
+            <span class="text-gray-400 mr-2">{{ sIdx + 1 }}.{{ iIdx + 1 }}</span>
+            {{ item.content }}
+          </span>
+          <span v-if="item.timeEstimate" class="text-xs text-gray-500 whitespace-nowrap ml-4">
+            {{ formatTime(item.timeEstimate) }}
+          </span>
+        </div>
+      </div>
+
+      <!-- Навигация -->
+      <router-link to="/dashboard"
+        class="inline-block mt-4 text-blue-500 hover:text-blue-700">
+        &larr; На главную
+      </router-link>
+    </div>
+  </div>
+</template>
+```
+
+### Проверка
+
+1. Создай ТЗ через AI (запиши голос → структурируй → сохрани)
+2. После сохранения тебя перенаправит на страницу просмотра
+3. Должны отобразиться: название, разделы с пунктами, оценки времени, общее время
+
+---
+
+## Урок 11.4: Улучшение промпта для AI ✅
+
+### Теория
+
+Базовый промпт может давать нерелевантные ответы — AI описывает процесс анализа вместо результата, или отвечает не на русском. Нужно сделать промпт более точным.
+
+### Шаг 1: Обновить промпт в aiService.js
+
+Замени промпт в `src/services/aiService.js`:
+
+```javascript
+const prompt = `Ты — опытный системный аналитик. Твоя задача — превратить сырой текст (запись речи заказчика) в структурированное техническое задание на разработку.
+
+ПРАВИЛА:
+- Разбей требования заказчика на логические разделы (например: "Каталог товаров", "Корзина", "Оплата", "Личный кабинет")
+- В каждом разделе выдели конкретные задачи для разработчика
+- Каждой задаче дай оценку времени в минутах (реалистичную для junior/middle разработчика)
+- Придумай короткое название ТЗ, отражающее суть проекта
+- НЕ описывай процесс анализа, описывай РЕЗУЛЬТАТ — что нужно разработать
+- Отвечай ТОЛЬКО на русском языке
+
+Верни ТОЛЬКО валидный JSON, без markdown-обёртки, без пояснений до или после, строго в формате:
+{
+  "title": "Название ТЗ",
+  "sections": [
+    {
+      "title": "Название раздела",
+      "items": [
+        {
+          "content": "Описание задачи для разработчика",
+          "timeEstimate": 60
+        }
+      ]
+    }
+  ]
+}
+
+Текст от заказчика:
+${text}`
+```
+
+**Что изменилось:**
+- Роль "системный аналитик" — модель лучше понимает контекст
+- Примеры разделов — подсказка для модели
+- "НЕ описывай процесс анализа" — AI не будет описывать как он анализирует
+- "Отвечай ТОЛЬКО на русском" — qwen2.5 иногда отвечает на китайском
+
+### Проверка
+
+Перезапусти бэкенд и отправь тестовый запрос. Сравни качество ответа до и после.
+
+## Урок 11.5: Редактирование ТЗ ✅
+
+### Теория
+
+После генерации AI может ошибиться: неточное название, лишний пункт, неправильная оценка времени. Пользователь должен иметь возможность отредактировать ТЗ прямо на странице просмотра.
+
+Что нужно:
+1. **Backend** — эндпоинт `PUT /api/specifications/:id` для обновления ТЗ
+2. **Frontend** — режим редактирования на `SpecificationPage.vue`
+
+### Шаг 1: Эндпоинт обновления (Backend)
+
+Добавь функцию `update` в `src/controllers/specificationController.js`:
+
+```javascript
+/**
+ * PUT /api/specifications/:id
+ *
+ * Обновить ТЗ: название, секции и пункты
+ *
+ * Стратегия обновления:
+ * 1. Удаляем все старые секции (каскадно удалятся пункты)
+ * 2. Создаём новые секции и пункты из тела запроса
+ *
+ * Почему удаляем и создаём заново, а не обновляем по одному?
+ * - Пользователь мог добавить/удалить секции и пункты
+ * - Мог поменять порядок
+ * - Проще пересоздать, чем отслеживать каждое изменение
+ * - Prisma делает всё в одной транзакции — безопасно
+ */
+async function update(req, res) {
+  try {
+    const id = parseInt(req.params.id)
+    const { title, sections } = req.body
+
+    // Проверяем что ТЗ существует и принадлежит пользователю
+    const existing = await prisma.specification.findFirst({
+      where: { id, userId: req.userId }
+    })
+    if (!existing) {
+      return res.status(404).json({ error: 'ТЗ не найдено' })
+    }
+
+    // ========================================
+    // Транзакция: удаляем старые секции + обновляем ТЗ
+    //
+    // prisma.$transaction — гарантирует что либо ВСЕ
+    // операции выполнятся, либо НИ ОДНА (атомарность)
+    // ========================================
+    const updated = await prisma.$transaction(async (tx) => {
+      // Удаляем старые секции (items удалятся каскадно)
+      await tx.section.deleteMany({
+        where: { specificationId: id }
+      })
+
+      // Обновляем заголовок и создаём новые секции
+      return tx.specification.update({
+        where: { id },
+        data: {
+          title,
+          sections: {
+            create: sections.map((section, sIdx) => ({
+              title: section.title,
+              position: sIdx,
+              items: {
+                create: section.items.map((item, iIdx) => ({
+                  content: item.content,
+                  timeEstimate: item.timeEstimate || null,
+                  position: iIdx
+                }))
+              }
+            }))
+          }
+        },
+        include: {
+          sections: {
+            orderBy: { position: 'asc' },
+            include: {
+              items: { orderBy: { position: 'asc' } }
+            }
+          }
+        }
+      })
+    })
+
+    res.json(updated)
+  } catch (error) {
+    console.error('Ошибка обновления ТЗ:', error)
+    res.status(500).json({ error: 'Ошибка сервера' })
+  }
+}
+```
+
+Не забудь добавить `update` в `module.exports`:
+
+```javascript
+module.exports = { generate, getById, getAll, update }
+```
+
+### Шаг 2: Подключить роут
+
+В `src/routes/specifications.js` добавь:
+
+```javascript
+const { generate, getById, getAll, update } = require('../controllers/specificationController')
+
+// ... после остальных роутов
+router.put('/:id', update)
+```
+
+### Шаг 3: Режим редактирования на фронте
+
+Обнови `src/pages/SpecificationPage.vue` — добавь переключение между просмотром и редактированием:
+
+**В `<script setup>` добавь:**
+
+```javascript
+// ========================================
+// Режим редактирования
+//
+// isEditing — переключатель просмотр/редактирование
+// editTitle — редактируемый заголовок
+// editSections — редактируемые секции (копия данных)
+//
+// Работаем с копией, чтобы можно было отменить изменения
+// ========================================
+const isEditing = ref(false)
+const editTitle = ref('')
+const editSections = ref([])
+const isSaving = ref(false)
+
+// Включить режим редактирования
+// JSON.parse(JSON.stringify(...)) — глубокая копия объекта
+function startEditing() {
+  editTitle.value = spec.value.title
+  editSections.value = JSON.parse(JSON.stringify(spec.value.sections))
+  isEditing.value = true
+}
+
+// Отменить редактирование
+function cancelEditing() {
+  isEditing.value = false
+}
+
+// Добавить раздел
+function addSection() {
+  editSections.value.push({
+    title: 'Новый раздел',
+    items: [{ content: '', timeEstimate: null }]
+  })
+}
+
+// Добавить пункт в раздел
+function addItem(sIdx) {
+  editSections.value[sIdx].items.push({
+    content: '',
+    timeEstimate: null
+  })
+}
+
+// Удалить пункт
+function removeItem(sIdx, iIdx) {
+  editSections.value[sIdx].items.splice(iIdx, 1)
+}
+
+// Удалить раздел
+function removeSection(sIdx) {
+  editSections.value.splice(sIdx, 1)
+}
+
+// Сохранить изменения
+async function saveChanges() {
+  isSaving.value = true
+  try {
+    const response = await api.put(`/specifications/${route.params.id}`, {
+      title: editTitle.value,
+      sections: editSections.value
+    })
+    spec.value = response.data
+    isEditing.value = false
+  } catch (e) {
+    error.value = e.response?.data?.error || 'Ошибка сохранения'
+  } finally {
+    isSaving.value = false
+  }
+}
+```
+
+**В `<template>` добавь кнопку "Редактировать" и форму редактирования:**
+
+```html
+<!-- Кнопка редактирования (в режиме просмотра) -->
+<button v-if="!isEditing" @click="startEditing"
+  class="mb-6 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 text-sm">
+  Редактировать
+</button>
+
+<!-- Режим редактирования -->
+<div v-if="isEditing">
+  <!-- Название -->
+  <div class="bg-white rounded-lg shadow p-6 mb-4">
+    <label class="block text-sm font-medium mb-1">Название ТЗ</label>
+    <input v-model="editTitle" type="text" class="w-full border rounded px-3 py-2" />
+  </div>
+
+  <!-- Секции -->
+  <div v-for="(section, sIdx) in editSections" :key="sIdx"
+    class="bg-white rounded-lg shadow p-6 mb-4">
+    <div class="flex items-center justify-between mb-4">
+      <input v-model="section.title" type="text"
+        class="text-lg font-semibold border-b border-transparent hover:border-gray-300 focus:border-blue-500 outline-none flex-1"
+        placeholder="Название раздела" />
+      <button @click="removeSection(sIdx)"
+        class="text-red-400 hover:text-red-600 ml-4 text-sm">
+        Удалить раздел
+      </button>
+    </div>
+
+    <div v-for="(item, iIdx) in section.items" :key="iIdx"
+      class="flex gap-3 mb-3 items-start">
+      <span class="text-gray-400 mt-2 text-sm">{{ sIdx + 1 }}.{{ iIdx + 1 }}</span>
+      <textarea v-model="item.content" rows="2"
+        class="flex-1 border rounded px-3 py-2 text-sm"
+        placeholder="Описание пункта"></textarea>
+      <input v-model.number="item.timeEstimate" type="number" min="0"
+        class="w-20 border rounded px-2 py-2 text-sm"
+        placeholder="мин" />
+      <button @click="removeItem(sIdx, iIdx)"
+        class="text-red-400 hover:text-red-600 mt-2">&times;</button>
+    </div>
+
+    <button @click="addItem(sIdx)"
+      class="text-blue-500 hover:text-blue-700 text-sm">
+      + Добавить пункт
+    </button>
+  </div>
+
+  <!-- Кнопки -->
+  <div class="flex gap-4">
+    <button @click="addSection"
+      class="bg-gray-200 px-4 py-2 rounded hover:bg-gray-300">
+      + Добавить раздел
+    </button>
+    <button @click="saveChanges" :disabled="isSaving"
+      class="bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600 disabled:opacity-50">
+      {{ isSaving ? 'Сохранение...' : 'Сохранить' }}
+    </button>
+    <button @click="cancelEditing"
+      class="bg-gray-200 px-4 py-2 rounded hover:bg-gray-300">
+      Отмена
+    </button>
+  </div>
+</div>
+```
+
+### Проверка
+
+1. Открой любое ТЗ
+2. Нажми "Редактировать"
+3. Измени название, добавь/удали пункты, поменяй оценки
+4. Нажми "Сохранить" — данные обновятся в БД
+5. Нажми "Отмена" — изменения откатятся
 
 ---
 

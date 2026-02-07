@@ -12,8 +12,6 @@ const {
   clear
 } = useSpeechRecognition()
 
-const emit = defineEmits(['transcriptReady'])
-
 function toggle() {
   if (isListening.value) {
     stop()
@@ -22,8 +20,20 @@ function toggle() {
   }
 }
 
-function useTranscript() {
-  if (transcript.value) {
+
+// ========================================
+// defineEmits — объявляем события компонента
+//
+// Родительский компонент (RecordPage) сможет слушать:
+// <SpeechRecorder @transcriptReady="onTranscriptReady" />
+// ========================================
+
+const emit = defineEmits(
+    ['transcriptReady']
+)
+
+function useTrancript() {
+  if(transcript.value){
     emit('transcriptReady', transcript.value)
   }
 }
@@ -58,15 +68,12 @@ function useTranscript() {
       >
         {{ isListening ? '⏹ Остановить' : '🎤 Начать запись' }}
       </button>
-
-      <button
-          v-if="transcript"
-          @click="useTranscript"
-          class="px-6 py-3 rounded bg-green-500 hover:bg-green-600 text-white font-medium"
+      <button v-if="transcript"
+      @click="useTrancript"
+              class="px-6 py-3 rounded bg-green-500 hover:bg-green-600 text-white font-medium"
       >
-        Создать ТЗ
+      Создать ТЗ
       </button>
-
       <button
           v-if="transcript"
           @click="clear"

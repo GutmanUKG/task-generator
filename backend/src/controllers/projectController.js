@@ -21,12 +21,21 @@ async function getOne(req, res) {
                 id: parseInt(req.params.id),
                 userId: req.userId
             },
+            // ========================================
+            // include — подтягиваем связанные данные
+            //
+            // Без include: { id, name, description }
+            // С include: { id, name, description, specifications: [...] }
+            //
+            // Вложенный include — подтягиваем секции внутри ТЗ,
+            // а внутри секций — пункты
+            // ========================================
             include: {
                 specifications: {
-                    orderBy: { createdAt: 'desc' },
+                    orderBy: {createdAt : 'desc'},
                     include: {
                         sections: {
-                            orderBy: { position: 'asc' },
+                            orderBy: {position: 'asc'},
                             include: {
                                 items: { orderBy: { position: 'asc' } }
                             }
