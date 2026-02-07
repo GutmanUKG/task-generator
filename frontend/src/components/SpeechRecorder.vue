@@ -1,5 +1,6 @@
 <script setup>
-import { useSpeechRecognition } from "../composables/useSpeechRecognition.js";
+import { useSpeechRecognition } from '../composables/useSpeechRecognition'
+
 const {
   isSupported,
   isListening,
@@ -11,26 +12,29 @@ const {
   clear
 } = useSpeechRecognition()
 
-function toggle () {
-  if(isListening.value){
+const emit = defineEmits(['transcriptReady'])
+
+function toggle() {
+  if (isListening.value) {
     stop()
-  }else{
+  } else {
     start()
   }
 }
 
+function useTranscript() {
+  if (transcript.value) {
+    emit('transcriptReady', transcript.value)
+  }
+}
 </script>
 
 <template>
-  <div class="p-6 max-w-2x1 mx-auto">
+  <div class="p-6 max-w-2xl mx-auto">
     <h1 class="text-2xl font-bold mb-6">Голосовой ввод</h1>
 
-  <!--  Ошибка поддержки браузера  -->
-
-    <div
-        v-if="!isSupported"
-        class="bg-red-100 text-red-700 p-4 rounded mb-4"
-    >
+    <!-- Браузер не поддерживает -->
+    <div v-if="!isSupported" class="bg-red-100 text-red-700 p-4 rounded mb-4">
       Ваш браузер не поддерживает распознавание речи. Используйте Chrome или Edge.
     </div>
 
@@ -40,49 +44,57 @@ function toggle () {
     </div>
 
     <!-- Кнопки -->
-
     <div class="flex gap-4 mb-6">
       <button
-      @click = 'toggle'
-      :disabled = "!isSupported"
-      :class = "[
+          @click="toggle"
+          :disabled="!isSupported"
+          :class="[
           'px-6 py-3 rounded font-medium',
           isListening
-          ? 'bg-red-500 hover:bg-red-600 text-white'
-          : 'bg-blue-500 hover: bg-blue-600 text-white',
+            ? 'bg-red-500 hover:bg-red-600 text-white'
+            : 'bg-blue-500 hover:bg-blue-600 text-white',
           !isSupported && 'opacity-50 cursor-not-allowed'
-      ]"
+        ]"
       >
         {{ isListening ? '⏹ Остановить' : '🎤 Начать запись' }}
       </button>
+
       <button
-      v-if="transcript"
-      @click = "clear"
-      class="px-6 py-3 rounded bg-gray-200 hover:bg-gray-300"
+          v-if="transcript"
+          @click="useTranscript"
+          class="px-6 py-3 rounded bg-green-500 hover:bg-green-600 text-white font-medium"
+      >
+        Создать ТЗ
+      </button>
+
+      <button
+          v-if="transcript"
+          @click="clear"
+          class="px-6 py-3 rounded bg-gray-200 hover:bg-gray-300"
       >
         Очистить
       </button>
     </div>
-      <!-- Индикатор записи -->
-      <div v-if="isListening" class="flex items-center gap-2 text-red-500 mb-4">
-        <span class="w-3 h-3 bg-red-500 rounded-full animate-pulse"></span>
-        Запись....
-      </div>
+
+    <!-- Индикатор записи -->
+    <div v-if="isListening" class="flex items-center gap-2 text-red-500 mb-4">
+      <span class="w-3 h-3 bg-red-500 rounded-full animate-pulse"></span>
+      Запись...
+    </div>
+
     <!-- Текст -->
     <div class="border rounded p-4 min-h-[200px] bg-white">
       <template v-if="transcript || interimTranscript">
-        {{transcript}}
-        <span class="text-gray-400">
-          {{interimTranscript}}
-        </span>
+        {{ transcript }}<span class="text-gray-400">{{ interimTranscript }}</span>
       </template>
       <span v-else class="text-gray-400">
         Нажмите "Начать запись" и говорите...
       </span>
     </div>
+
     <!-- Статистика -->
     <div v-if="transcript" class="mt-4 text-sm text-gray-500">
-      Символов : {{ transcript.length }}
+      Символов: {{ transcript.length }}
     </div>
   </div>
 </template>

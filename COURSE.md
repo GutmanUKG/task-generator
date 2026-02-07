@@ -988,9 +988,9 @@ import SpeechRecorder from './components/SpeechRecorder.vue'
 
 ---
 
-# ЧАСТЬ 4: CRUD ПРОЕКТОВ ⬜
+# ЧАСТЬ 4: CRUD ПРОЕКТОВ ✅
 
-## Урок 4.1: API для проектов (Backend) ⬜
+## Урок 4.1: API для проектов (Backend) ✅
 
 ### Шаг 1: Контроллер
 
@@ -1150,9 +1150,9 @@ app.use('/api/projects', projectRoutes)
 
 ---
 
-# ЧАСТЬ 5: CRUD ТЕХНИЧЕСКИХ ЗАДАНИЙ ⬜
+# ЧАСТЬ 5: CRUD ТЕХНИЧЕСКИХ ЗАДАНИЙ ✅
 
-## Урок 5.1: API для ТЗ ⬜
+## Урок 5.1: API для ТЗ ✅
 
 Аналогично проектам, но со вложенными секциями и пунктами.
 
@@ -1240,15 +1240,15 @@ module.exports = { getAll, create }
 
 ---
 
-# ЧАСТЬ 6: ЗАГОТОВКА ДЛЯ AI ⬜
+# ЧАСТЬ 6: ЗАГОТОВКА ДЛЯ AI ✅
 
-## Урок 6.1: Интерфейс AI сервиса ⬜
+## Урок 6.1: Интерфейс AI сервиса ✅
 
 Создай файл `src/services/aiService.js`:
 
 ```javascript
 // Заглушка для AI сервиса
-// Позже здесь будет реальная интеграция с Gemini/OpenAI/Claude
+// Позже здесь будет реальная интеграция с Ollama (Часть 12)
 
 async function structureText(text) {
   // Пока возвращаем простую структуру
@@ -1350,7 +1350,7 @@ module.exports = { generatePdf }
 
 ---
 
-# ЧАСТЬ 8: НАДЁЖНАЯ ТРАНСКРИБАЦИЯ ⬜
+# ЧАСТЬ 8: НАДЁЖНАЯ ТРАНСКРИБАЦИЯ ✅
 
 ## Проблема Web Speech API
 
@@ -1359,15 +1359,11 @@ Web Speech API останавливается при:
 - Длительной записи (браузер обрывает соединение)
 - Потере сети (аудио идёт на серверы Google)
 
-Это делает его непригодным для записи длинных ТЗ. Есть два решения:
-1. **Авто-перезапуск** — быстрый фикс, бесплатно, но всё ещё зависит от браузера
-2. **Google Cloud Speech-to-Text API** — надёжно, бесплатный лимит 60 мин/месяц
-
-Мы реализуем **оба** варианта — пользователь сможет выбрать.
+Это делает его непригодным для записи длинных ТЗ. Решение — авто-перезапуск: бесплатно и работает в браузере.
 
 ---
 
-## Урок 8.1: Авто-перезапуск Web Speech API ⬜
+## Урок 8.1: Авто-перезапуск Web Speech API ✅
 
 ### Теория
 
@@ -1553,484 +1549,9 @@ export function useSpeechRecognition() {
 
 ---
 
-## Урок 8.2: Google Cloud Speech-to-Text API (серверная транскрибация) ⬜
+# ЧАСТЬ 9: VUE ROUTER И НАВИГАЦИЯ ✅
 
-### Теория
-
-Подход: записываем аудио через `MediaRecorder` API в браузере → отправляем файл на наш backend → backend отправляет на Google Cloud Speech-to-Text → получаем текст.
-
-**Преимущества:**
-- Не зависит от браузера (работает везде)
-- Не обрывается на длинных записях
-- Выше качество распознавания
-- Бесплатный лимит: 60 минут в месяц
-
-### Шаг 1: Получение API ключа Google
-
-1. Перейди на https://console.cloud.google.com
-2. Создай новый проект (или выбери существующий)
-3. Включи **Cloud Speech-to-Text API** в разделе APIs & Services
-4. Создай **Service Account** в IAM → Service Accounts
-5. Скачай JSON-ключ и сохрани в `backend/credentials/google-speech.json`
-6. Добавь в `.env`:
-
-```env
-GOOGLE_APPLICATION_CREDENTIALS=./credentials/google-speech.json
-```
-
-7. Добавь `credentials/` в `.gitignore` — **НИКОГДА не коммить ключи!**
-
-### Шаг 2: Установка зависимости на backend
-
-```bash
-cd backend
-npm install @google-cloud/speech multer
-```
-
-- `@google-cloud/speech` — клиент Google Speech-to-Text
-- `multer` — парсинг multipart/form-data (загрузка файлов)
-
-### Шаг 3: Сервис транскрибации
-
-Создай файл `src/services/transcriptionService.js`:
-
-```javascript
-const speech = require('@google-cloud/speech')
-
-// ========================================
-// Создаём клиент Google Speech-to-Text
-//
-// Клиент автоматически ищет credentials из
-// переменной GOOGLE_APPLICATION_CREDENTIALS
-// ========================================
-const client = new speech.SpeechClient()
-
-/**
- * Транскрибация аудио-файла
- *
- * @param {Buffer} audioBuffer — бинарные данные аудио
- * @param {string} mimeType — MIME тип (audio/webm, audio/wav и т.д.)
- * @returns {string} — распознанный текст
- *
- * Как работает:
- * 1. Конвертируем Buffer в base64 строку (Google API требует)
- * 2. Указываем кодек и язык
- * 3. Отправляем на сервер Google
- * 4. Получаем массив результатов с альтернативами
- * 5. Собираем текст из лучших альтернатив
- */
-async function transcribeAudio(audioBuffer, mimeType) {
-  // Определяем кодировку по MIME типу
-  // MediaRecorder в Chrome записывает в WebM/Opus
-  const encoding = mimeType.includes('webm') ? 'WEBM_OPUS' : 'LINEAR16'
-
-  const request = {
-    audio: {
-      // Google API принимает аудио в base64
-      content: audioBuffer.toString('base64')
-    },
-    config: {
-      encoding,
-      // sampleRateHertz не нужен для WEBM_OPUS — определяется автоматически
-      languageCode: 'ru-RU',
-
-      // Улучшения качества распознавания:
-      enableAutomaticPunctuation: true,  // Автоматические точки и запятые
-      model: 'latest_long',             // Модель для длинных записей
-
-      // Альтернативные языки (если говорят английские термины)
-      alternativeLanguageCodes: ['en-US']
-    }
-  }
-
-  const [response] = await client.recognize(request)
-
-  // response.results — массив фрагментов речи
-  // Каждый фрагмент имеет alternatives — варианты распознавания
-  // alternatives[0] — лучший вариант
-  const text = response.results
-    .map(result => result.alternatives[0].transcript)
-    .join(' ')
-
-  return text
-}
-
-module.exports = { transcribeAudio }
-```
-
-### Шаг 4: Эндпоинт транскрибации
-
-Создай файл `src/routes/transcription.js`:
-
-```javascript
-const express = require('express')
-const multer = require('multer')
-const { authenticate } = require('../middleware/auth')
-const { transcribeAudio } = require('../services/transcriptionService')
-
-const router = express.Router()
-
-// ========================================
-// Настройка multer
-//
-// storage: memoryStorage() — файл хранится в RAM как Buffer
-// Не сохраняем на диск — сразу отправляем в Google API
-// limits: 10MB максимум (примерно 10 минут записи)
-// ========================================
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }
-})
-
-// ========================================
-// POST /api/transcription
-//
-// Принимает: multipart/form-data с полем "audio"
-// Возвращает: { text: "распознанный текст" }
-//
-// Поток данных:
-// Браузер (MediaRecorder) → multer (парсит файл) → Google API → ответ
-// ========================================
-router.post('/', authenticate, upload.single('audio'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'Аудио файл не получен' })
-    }
-
-    const text = await transcribeAudio(req.file.buffer, req.file.mimetype)
-
-    res.json({ text })
-  } catch (error) {
-    console.error('Ошибка транскрибации:', error)
-    res.status(500).json({ error: 'Ошибка распознавания речи' })
-  }
-})
-
-module.exports = router
-```
-
-### Шаг 5: Подключение роута
-
-В `src/index.js` добавь:
-
-```javascript
-const transcriptionRoutes = require('./routes/transcription')
-
-// После остальных app.use(...)
-app.use('/api/transcription', transcriptionRoutes)
-```
-
-### Шаг 6: Composable для серверной транскрибации (Frontend)
-
-Создай файл `src/composables/useServerTranscription.js`:
-
-```javascript
-import { ref } from 'vue'
-import api from '../api'
-
-/**
- * Composable для серверной транскрибации через Google Speech API
- *
- * В отличие от useSpeechRecognition (браузерный):
- * - Работает в любом браузере с поддержкой MediaRecorder
- * - Не обрывается на длинных записях
- * - Отправляет аудио на наш сервер → Google API
- *
- * Минус: текст появляется только после остановки записи
- * (нет промежуточных результатов в реальном времени)
- */
-export function useServerTranscription() {
-  const isRecording = ref(false)
-  const isProcessing = ref(false)
-  const transcript = ref('')
-  const error = ref(null)
-
-  let mediaRecorder = null
-  let audioChunks = []
-
-  // ========================================
-  // Проверка поддержки MediaRecorder
-  // Поддерживается во всех современных браузерах
-  // ========================================
-  const isSupported = typeof MediaRecorder !== 'undefined'
-
-  /**
-   * Начать запись
-   *
-   * 1. Запрашиваем доступ к микрофону (navigator.mediaDevices.getUserMedia)
-   * 2. Создаём MediaRecorder — он записывает аудиопоток
-   * 3. ondataavailable — каждый чанк аудио добавляем в массив
-   * 4. onstop — когда запись остановлена, собираем чанки в Blob
-   */
-  async function start() {
-    try {
-      error.value = null
-      audioChunks = []
-
-      // Запрашиваем доступ к микрофону
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-
-      // Создаём рекордер
-      // mimeType: 'audio/webm' — формат который понимает Google API
-      mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm;codecs=opus'
-      })
-
-      // Каждый раз когда готов кусок аудио — сохраняем
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunks.push(event.data)
-        }
-      }
-
-      // Когда запись остановлена — отправляем на сервер
-      mediaRecorder.onstop = async () => {
-        // Собираем все чанки в один Blob
-        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' })
-        await sendToServer(audioBlob)
-
-        // Останавливаем все треки микрофона (освобождаем устройство)
-        stream.getTracks().forEach(track => track.stop())
-      }
-
-      // Запускаем запись
-      // timeslice: 1000 — получать чанки каждую секунду
-      mediaRecorder.start(1000)
-      isRecording.value = true
-
-    } catch (e) {
-      if (e.name === 'NotAllowedError') {
-        error.value = 'Доступ к микрофону запрещён'
-      } else {
-        error.value = 'Ошибка запуска записи: ' + e.message
-      }
-    }
-  }
-
-  /**
-   * Остановить запись
-   * Вызывает mediaRecorder.stop() → срабатывает onstop → отправка на сервер
-   */
-  function stop() {
-    if (mediaRecorder && isRecording.value) {
-      mediaRecorder.stop()
-      isRecording.value = false
-    }
-  }
-
-  /**
-   * Отправить аудио на backend для транскрибации
-   *
-   * FormData — специальный объект для отправки файлов
-   * Axios автоматически ставит Content-Type: multipart/form-data
-   */
-  async function sendToServer(audioBlob) {
-    isProcessing.value = true
-    try {
-      const formData = new FormData()
-      formData.append('audio', audioBlob, 'recording.webm')
-
-      const response = await api.post('/transcription', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      })
-
-      // Добавляем новый текст к существующему (можно записывать несколько раз)
-      if (response.data.text) {
-        transcript.value += (transcript.value ? ' ' : '') + response.data.text
-      }
-    } catch (e) {
-      error.value = e.response?.data?.error || 'Ошибка распознавания'
-    } finally {
-      isProcessing.value = false
-    }
-  }
-
-  function clear() {
-    transcript.value = ''
-  }
-
-  return {
-    isSupported,
-    isRecording,
-    isProcessing,  // true пока сервер обрабатывает аудио
-    transcript,
-    error,
-    start,
-    stop,
-    clear
-  }
-}
-```
-
-### Шаг 7: Обновлённый компонент SpeechRecorder
-
-Замени `src/components/SpeechRecorder.vue` — теперь с выбором метода:
-
-```vue
-<script setup>
-import { ref } from 'vue'
-import { useSpeechRecognition } from '../composables/useSpeechRecognition'
-import { useServerTranscription } from '../composables/useServerTranscription'
-
-// ========================================
-// Два метода транскрибации:
-// 'browser' — Web Speech API (бесплатно, реалтайм, но может обрываться)
-// 'server'  — Google Cloud API (надёжно, но текст после остановки)
-// ========================================
-const method = ref('browser')
-
-const browser = useSpeechRecognition()
-const server = useServerTranscription()
-
-// Текущий активный метод (computed-подобная логика)
-function isListening() {
-  return method.value === 'browser' ? browser.isListening.value : server.isRecording.value
-}
-
-function currentTranscript() {
-  return method.value === 'browser' ? browser.transcript.value : server.transcript.value
-}
-
-function currentError() {
-  return method.value === 'browser' ? browser.error.value : server.error.value
-}
-
-function toggle() {
-  if (method.value === 'browser') {
-    browser.isListening.value ? browser.stop() : browser.start()
-  } else {
-    server.isRecording.value ? server.stop() : server.start()
-  }
-}
-
-function clear() {
-  browser.clear()
-  server.clear()
-}
-
-// Событие — передаёт текст родительскому компоненту
-const emit = defineEmits(['transcriptReady'])
-
-function useTranscript() {
-  const text = currentTranscript()
-  if (text) {
-    emit('transcriptReady', text)
-  }
-}
-</script>
-
-<template>
-  <div class="p-6 max-w-2xl mx-auto">
-    <h1 class="text-2xl font-bold mb-6">Голосовой ввод</h1>
-
-    <!-- Выбор метода -->
-    <div class="flex gap-4 mb-6 p-4 bg-gray-50 rounded">
-      <label class="flex items-center gap-2 cursor-pointer">
-        <input type="radio" v-model="method" value="browser" :disabled="isListening()" />
-        <span class="text-sm">
-          <strong>Браузерный</strong> — реалтайм, бесплатно
-        </span>
-      </label>
-      <label class="flex items-center gap-2 cursor-pointer">
-        <input type="radio" v-model="method" value="server" :disabled="isListening()" />
-        <span class="text-sm">
-          <strong>Серверный</strong> — надёжный, Google API
-        </span>
-      </label>
-    </div>
-
-    <!-- Ошибка поддержки -->
-    <div
-      v-if="method === 'browser' && !browser.isSupported"
-      class="bg-red-100 text-red-700 p-4 rounded mb-4"
-    >
-      Ваш браузер не поддерживает Web Speech API. Переключитесь на серверный метод.
-    </div>
-
-    <!-- Ошибка -->
-    <div v-if="currentError()" class="bg-yellow-100 text-yellow-700 p-4 rounded mb-4">
-      {{ currentError() }}
-    </div>
-
-    <!-- Кнопки управления -->
-    <div class="flex gap-4 mb-6">
-      <button
-        @click="toggle"
-        :class="[
-          'px-6 py-3 rounded font-medium transition-colors',
-          isListening()
-            ? 'bg-red-500 hover:bg-red-600 text-white'
-            : 'bg-blue-500 hover:bg-blue-600 text-white'
-        ]"
-      >
-        {{ isListening() ? '⏹ Остановить' : '🎤 Начать запись' }}
-      </button>
-
-      <button
-        v-if="currentTranscript()"
-        @click="useTranscript"
-        class="px-6 py-3 rounded bg-green-500 hover:bg-green-600 text-white font-medium"
-      >
-        Использовать текст
-      </button>
-
-      <button
-        v-if="currentTranscript()"
-        @click="clear"
-        class="px-6 py-3 rounded bg-gray-200 hover:bg-gray-300"
-      >
-        Очистить
-      </button>
-    </div>
-
-    <!-- Индикатор записи -->
-    <div v-if="isListening()" class="flex items-center gap-2 text-red-500 mb-4">
-      <span class="w-3 h-3 bg-red-500 rounded-full animate-pulse"></span>
-      Запись...
-    </div>
-
-    <!-- Индикатор обработки (серверный метод) -->
-    <div v-if="server.isProcessing.value" class="flex items-center gap-2 text-blue-500 mb-4">
-      <span class="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></span>
-      Распознавание речи...
-    </div>
-
-    <!-- Область текста -->
-    <div class="border rounded p-4 min-h-[200px] bg-white">
-      <template v-if="currentTranscript() || browser.interimTranscript.value">
-        {{ currentTranscript() }}
-        <span v-if="method === 'browser'" class="text-gray-400">
-          {{ browser.interimTranscript.value }}
-        </span>
-      </template>
-      <span v-else class="text-gray-400">
-        Нажмите "Начать запись" и говорите...
-      </span>
-    </div>
-
-    <!-- Статистика -->
-    <div v-if="currentTranscript()" class="mt-4 text-sm text-gray-500">
-      Символов: {{ currentTranscript().length }}
-    </div>
-  </div>
-</template>
-```
-
-**Разница между методами:**
-
-| | Браузерный (Web Speech API) | Серверный (Google Cloud) |
-|---|---|---|
-| Реалтайм текст | Да (видно пока говоришь) | Нет (текст после остановки) |
-| Длинные записи | Авто-перезапуск (может быть пауза) | Без ограничений |
-| Стоимость | Бесплатно | 60 мин/мес бесплатно |
-| Браузеры | Chrome, Edge | Любой |
-| Качество | Хорошее | Отличное (пунктуация, модели) |
-
----
-
-# ЧАСТЬ 9: VUE ROUTER И НАВИГАЦИЯ ⬜
-
-## Урок 9.1: Установка и настройка ⬜
+## Урок 9.1: Установка и настройка ✅
 
 ### Теория
 
@@ -2413,9 +1934,9 @@ createApp(App)
 
 ---
 
-# ЧАСТЬ 10: UI ПРОЕКТОВ ⬜
+# ЧАСТЬ 10: UI ПРОЕКТОВ ✅
 
-## Урок 10.1: Страница проектов (Frontend) ⬜
+## Урок 10.1: Страница проектов (Frontend) ✅
 
 ### Теория
 
@@ -2628,9 +2149,9 @@ async function deleteProject(id) {
 
 ---
 
-# ЧАСТЬ 11: UI ТЕХНИЧЕСКИХ ЗАДАНИЙ ⬜
+# ЧАСТЬ 11: UI ТЕХНИЧЕСКИХ ЗАДАНИЙ ✅
 
-## Урок 11.1: Создание ТЗ из голосового текста ⬜
+## Урок 11.1: Создание ТЗ из голосового текста ✅
 
 ### Теория
 
@@ -2876,62 +2397,81 @@ async function save() {
 
 ---
 
-# ЧАСТЬ 12: AI-СТРУКТУРИРОВАНИЕ ⬜
+# ЧАСТЬ 12: AI-СТРУКТУРИРОВАНИЕ ЧЕРЕЗ OLLAMA ✅
 
-## Урок 12.1: Интеграция с Gemini API ⬜
+## Урок 12.1: Установка и настройка Ollama ✅
 
 ### Теория
 
-Google Gemini API — бесплатный AI для структуризации текста.
-- Бесплатный лимит: 60 запросов/мин
-- Не требует карту для начала
-- Хорошо работает с русским языком
+Ollama — локальный AI, который работает прямо на твоём компьютере.
+- Полностью бесплатен — никаких API-ключей и лимитов
+- Работает офлайн после загрузки модели
+- Хорошо работает с русским языком (модель qwen2.5)
+- Отдаёт ответы через REST API на `localhost:11434`
 
-### Шаг 1: Получение API ключа
+### Шаг 1: Установка Ollama
 
-1. Перейди на https://aistudio.google.com/apikey
-2. Нажми "Create API Key"
-3. Скопируй ключ и добавь в `.env`:
-
-```env
-GEMINI_API_KEY=твой-ключ-здесь
-```
-
-### Шаг 2: Установка SDK
+1. Перейди на https://ollama.com и скачай установщик для своей ОС
+2. Установи и запусти Ollama
+3. Скачай модель (в терминале):
 
 ```bash
-cd backend
-npm install @google/generative-ai
+ollama pull qwen2.5:7b
 ```
 
-### Шаг 3: Обновлённый AI-сервис
+> Модель весит ~4.5 ГБ. Загрузка займёт несколько минут.
+> Если у тебя мало RAM (меньше 8 ГБ), используй `qwen2.5:3b` — она легче.
 
-Замени `src/services/aiService.js`:
+4. Проверь что всё работает:
+
+```bash
+ollama run qwen2.5:7b "Привет, ответь одним словом"
+```
+
+### Шаг 2: Переменные окружения
+
+Добавь в `backend/.env`:
+
+```env
+OLLAMA_URL=http://localhost:11434
+OLLAMA_MODEL=qwen2.5:7b
+```
+
+## Урок 12.2: Сервис Ollama (Backend) ✅
+
+### Теория
+
+Ollama предоставляет REST API. Мы будем отправлять POST-запрос на `/api/generate` с промптом и получать ответ от модели.
+
+Ключевой момент: мы просим модель вернуть JSON, но AI иногда добавляет текст до/после JSON. Поэтому нужна надёжная обработка ответа.
+
+### Шаг 1: Обновлённый AI-сервис
+
+Замени `src/services/aiService.js` (тот, что создали в Части 6):
 
 ```javascript
-const { GoogleGenerativeAI } = require('@google/generative-ai')
-
 // ========================================
-// Инициализация Gemini
+// Сервис для работы с Ollama
 //
-// GoogleGenerativeAI — SDK от Google
-// getGenerativeModel — выбираем модель
-// gemini-1.5-flash — быстрая и бесплатная модель
+// Ollama — локальный AI-сервер
+// Общение через HTTP API (REST)
+// Эндпоинт: POST /api/generate
 // ========================================
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+
+const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434'
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:7b'
 
 /**
- * Структурирование текста через AI
+ * Структурирование текста через Ollama
  *
  * @param {string} text — сырой текст из голосового ввода
- * @returns {Object} — { sections: [{ title, items: [{ content, timeEstimate }] }] }
+ * @returns {Object} — { title, sections: [{ title, items: [{ content, timeEstimate }] }] }
  *
  * Как работает:
  * 1. Формируем промпт с инструкцией для AI
- * 2. AI анализирует текст и разбивает на разделы и пункты
- * 3. Возвращает JSON-структуру
- * 4. Парсим JSON из ответа AI
+ * 2. Отправляем запрос в Ollama через fetch
+ * 3. Ollama генерирует ответ локально на твоём компьютере
+ * 4. Парсим JSON из ответа
  */
 async function structureText(text) {
   // ========================================
@@ -2940,17 +2480,19 @@ async function structureText(text) {
   // Ключевые моменты:
   // - Просим вернуть ТОЛЬКО JSON (без markdown)
   // - Указываем точную структуру ожидаемого ответа
-  // - Просим оценить время (AI умеет примерно оценивать)
+  // - Просим оценить время выполнения каждого пункта
+  // - Просим придумать название для ТЗ
   // ========================================
-  const prompt = `
-Ты — помощник по созданию технических заданий.
+  const prompt = `Ты — помощник по созданию технических заданий.
 
 Проанализируй текст ниже и структурируй его в техническое задание.
 Раздели на логические разделы, каждый раздел содержит пункты.
 Для каждого пункта дай оценку времени в минутах.
+Придумай краткое название для ТЗ.
 
 Верни ТОЛЬКО JSON без markdown-обёртки, строго в формате:
 {
+  "title": "Название ТЗ",
   "sections": [
     {
       "title": "Название раздела",
@@ -2965,44 +2507,74 @@ async function structureText(text) {
 }
 
 Текст для анализа:
-${text}
-`
+${text}`
+
+  // ========================================
+  // Запрос к Ollama
+  //
+  // fetch — встроенная функция для HTTP-запросов (Node 18+)
+  // stream: false — получаем весь ответ сразу (не по частям)
+  // signal + AbortController — таймаут 60 сек (AI может думать долго)
+  // ========================================
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 60000)
 
   try {
-    const result = await model.generateContent(prompt)
-    const response = result.response.text()
+    const response = await fetch(`${OLLAMA_URL}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: OLLAMA_MODEL,
+        prompt,
+        stream: false
+      }),
+      signal: controller.signal
+    })
+
+    clearTimeout(timeout)
+
+    if (!response.ok) {
+      throw new Error(`Ollama вернула ошибку: ${response.status}`)
+    }
+
+    const data = await response.json()
 
     // ========================================
-    // AI может вернуть JSON обёрнутый в ```json ... ```
+    // Парсинг ответа
+    //
+    // data.response — текст от AI
+    // AI может обернуть JSON в ```json ... ```
     // Убираем markdown-обёртку если есть
     // ========================================
-    const jsonStr = response
+    const jsonStr = data.response
       .replace(/```json\n?/g, '')
       .replace(/```\n?/g, '')
       .trim()
 
     return JSON.parse(jsonStr)
   } catch (error) {
-    console.error('Ошибка AI:', error)
+    clearTimeout(timeout)
 
-    // Fallback: если AI недоступен — простое разделение по предложениям
-    const lines = text.split(/[.!?]/).filter(line => line.trim())
-    return {
-      sections: [{
-        title: 'Основные требования',
-        items: lines.map(line => ({
-          content: line.trim(),
-          timeEstimate: null
-        }))
-      }]
+    // Понятные ошибки для пользователя
+    if (error.name === 'AbortError') {
+      throw new Error('Таймаут: Ollama не ответила за 60 секунд')
     }
+    if (error.cause?.code === 'ECONNREFUSED') {
+      throw new Error('Ollama не запущена. Выполни: ollama serve')
+    }
+
+    console.error('Ошибка AI:', error)
+    throw new Error('Не удалось структурировать текст через AI')
   }
 }
 
 module.exports = { structureText }
 ```
 
-### Шаг 4: Роут для AI
+> **Обрати внимание:** мы используем встроенный `fetch` (доступен в Node.js 18+).
+> Никаких дополнительных пакетов для HTTP-запросов не нужно!
+
+### Шаг 2: Роут для AI
 
 Создай `src/routes/ai.js`:
 
@@ -3017,9 +2589,9 @@ const router = express.Router()
  * POST /api/ai/structure
  *
  * Тело запроса: { text: "сырой текст" }
- * Ответ: { sections: [...] }
+ * Ответ: { title, sections: [...] }
  *
- * Поток: текст → промпт для AI → JSON-структура ТЗ
+ * Поток: текст → промпт для Ollama → JSON-структура ТЗ
  */
 router.post('/structure', authenticate, async (req, res) => {
   try {
@@ -3033,19 +2605,276 @@ router.post('/structure', authenticate, async (req, res) => {
     res.json(structured)
   } catch (error) {
     console.error('Ошибка AI-структурирования:', error)
-    res.status(500).json({ error: 'Ошибка обработки текста' })
+    res.status(500).json({ error: error.message })
   }
 })
 
 module.exports = router
 ```
 
-### Шаг 5: Подключение в index.js
+### Шаг 3: Подключение в index.js
+
+Добавь в `src/index.js` рядом с другими роутами:
 
 ```javascript
 const aiRoutes = require('./routes/ai')
 
 app.use('/api/ai', aiRoutes)
+```
+
+### Проверка
+
+1. Убедись что Ollama запущена (`ollama serve`)
+2. Запусти бэкенд: `npm run dev`
+3. Проверь через curl или Postman:
+
+```bash
+curl -X POST http://localhost:3000/api/ai/structure \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ТВОЙ_ТОКЕН" \
+  -d '{"text": "Нужно сделать интернет-магазин с каталогом товаров, корзиной и оплатой"}'
+```
+
+Ответ должен содержать JSON с разделами и пунктами ТЗ.
+
+> **Важно:** первый запрос может занять 10-30 секунд — модель загружается в память.
+> Последующие запросы будут быстрее (3-10 сек).
+
+## Урок 12.3: Генерация и сохранение ТЗ (Backend) ✅
+
+### Теория
+
+Сейчас AI возвращает структуру, но мы её не сохраняем в БД. В этом уроке создадим полноценный эндпоинт, который:
+1. Принимает текст и ID проекта
+2. Структурирует текст через Ollama
+3. Сохраняет результат в БД (Specification → Section → Item)
+4. Возвращает готовое ТЗ
+
+### Шаг 1: Контроллер спецификаций
+
+Создай `src/controllers/specificationController.js`:
+
+```javascript
+const prisma = require('../db')
+const { structureText } = require('../services/aiService')
+
+/**
+ * POST /api/specifications/generate
+ *
+ * Принимает сырой текст, структурирует через AI,
+ * сохраняет в БД как Specification → Section → Item
+ */
+async function generate(req, res) {
+  try {
+    const { text, projectId } = req.body
+
+    // Валидация
+    if (!text || !text.trim()) {
+      return res.status(400).json({ error: 'Текст не может быть пустым' })
+    }
+    if (!projectId) {
+      return res.status(400).json({ error: 'projectId обязателен' })
+    }
+
+    // Проверяем что проект существует и принадлежит пользователю
+    const project = await prisma.project.findFirst({
+      where: { id: projectId, userId: req.userId }
+    })
+    if (!project) {
+      return res.status(404).json({ error: 'Проект не найден' })
+    }
+
+    // ========================================
+    // Вызов AI
+    //
+    // structureText отправляет текст в Ollama
+    // и возвращает { title, sections: [...] }
+    // ========================================
+    const structured = await structureText(text)
+
+    // ========================================
+    // Сохранение в БД
+    //
+    // prisma.specification.create с nested create:
+    // - Создаём Specification
+    // - Внутри создаём Section[]
+    // - Внутри каждой секции создаём Item[]
+    //
+    // Всё в одной транзакции — если что-то упадёт,
+    // ничего не сохранится (атомарность)
+    // ========================================
+    const specification = await prisma.specification.create({
+      data: {
+        title: structured.title || 'Без названия',
+        projectId,
+        userId: req.userId,
+        sections: {
+          create: structured.sections.map((section, sIndex) => ({
+            title: section.title,
+            position: sIndex,
+            items: {
+              create: section.items.map((item, iIndex) => ({
+                content: item.content,
+                timeEstimate: item.timeEstimate || null,
+                position: iIndex
+              }))
+            }
+          }))
+        }
+      },
+      // Возвращаем созданное ТЗ со всеми связями
+      include: {
+        sections: {
+          orderBy: { position: 'asc' },
+          include: {
+            items: {
+              orderBy: { position: 'asc' }
+            }
+          }
+        }
+      }
+    })
+
+    res.status(201).json(specification)
+  } catch (error) {
+    console.error('Ошибка генерации ТЗ:', error)
+    res.status(500).json({ error: error.message })
+  }
+}
+
+/**
+ * GET /api/specifications/:id
+ *
+ * Получить ТЗ по ID с секциями и пунктами
+ */
+async function getById(req, res) {
+  try {
+    const id = parseInt(req.params.id)
+
+    const specification = await prisma.specification.findFirst({
+      where: { id, userId: req.userId },
+      include: {
+        sections: {
+          orderBy: { position: 'asc' },
+          include: {
+            items: {
+              orderBy: { position: 'asc' }
+            }
+          }
+        }
+      }
+    })
+
+    if (!specification) {
+      return res.status(404).json({ error: 'ТЗ не найдено' })
+    }
+
+    res.json(specification)
+  } catch (error) {
+    console.error('Ошибка получения ТЗ:', error)
+    res.status(500).json({ error: 'Ошибка сервера' })
+  }
+}
+
+/**
+ * GET /api/specifications
+ *
+ * Список ТЗ текущего пользователя
+ */
+async function getAll(req, res) {
+  try {
+    const specifications = await prisma.specification.findMany({
+      where: { userId: req.userId },
+      include: {
+        sections: {
+          orderBy: { position: 'asc' },
+          include: {
+            items: {
+              orderBy: { position: 'asc' }
+            }
+          }
+        },
+        project: {
+          select: { name: true }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    })
+
+    res.json(specifications)
+  } catch (error) {
+    console.error('Ошибка получения списка ТЗ:', error)
+    res.status(500).json({ error: 'Ошибка сервера' })
+  }
+}
+
+module.exports = { generate, getById, getAll }
+```
+
+### Шаг 2: Роуты спецификаций
+
+Создай `src/routes/specifications.js`:
+
+```javascript
+const express = require('express')
+const { authenticate } = require('../middleware/auth')
+const { generate, getById, getAll } = require('../controllers/specificationController')
+
+const router = express.Router()
+
+// Все роуты защищены авторизацией
+router.use(authenticate)
+
+router.post('/generate', generate)
+router.get('/', getAll)
+router.get('/:id', getById)
+
+module.exports = router
+```
+
+### Шаг 3: Подключение в index.js
+
+Добавь в `src/index.js`:
+
+```javascript
+const specRoutes = require('./routes/specifications')
+
+app.use('/api/specifications', specRoutes)
+```
+
+Итого `src/index.js` должен выглядеть так:
+
+```javascript
+const express = require('express')
+const cors = require('cors')
+require('dotenv').config()
+
+const authRoutes = require('./routes/auth')
+const aiRoutes = require('./routes/ai')
+const specRoutes = require('./routes/specifications')
+
+const app = express()
+const PORT = process.env.PORT || 3000
+
+app.use(cors({
+  origin: 'http://localhost:5173',
+  credentials: true
+}))
+
+app.use(express.json())
+
+// Роуты
+app.use('/api/auth', authRoutes)
+app.use('/api/ai', aiRoutes)
+app.use('/api/specifications', specRoutes)
+
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok' })
+})
+
+app.listen(PORT, () => {
+  console.log(`Сервер запущен http://localhost:${PORT}`)
+})
 ```
 
 ---

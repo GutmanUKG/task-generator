@@ -1,88 +1,156 @@
-import {ref, onUnmounted} from "vue";
+import { ref, onUnmounted } from 'vue'
 
-export function useSpeechRecognition(){
+export function useSpeechRecognition() {
     const isListening = ref(false)
     const transcript = ref('')
     const interimTranscript = ref('')
     const error = ref(null)
 
-    //Проверка поддержки
-    const SpeechRecognition = window.SpeechRecognitionResult || window.webkitSpeechRecognition
+    // ========================================
+    // Проверяем поддержку браузера
+    // SpeechRecognition — стандартное API
+    // webkitSpeechRecognition — для Chrome
+    // ========================================
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
     const isSupported = !!SpeechRecognition
 
     let recognition = null
-    if(isSupported){
-        recognition = new SpeechRecognition()
-        //Настройка
 
-        recognition.continuous = true //Непрерывное распознование
-        recognition.interimResults  = true //Вывод промежуточного результата
-        recognition.lang = "ru-Ru" //Язык
-        //Начало записи
-        recognition.onstart = () =>{
+    // Флаг: пользователь сам остановил запись?
+    // Нужен чтобы отличить "браузер оборвал" от "нажали Стоп"
+    let manualStop = false
+
+    if (isSupported) {
+        recognition = new SpeechRecognition()
+
+        // ========================================
+        // Настройки распознавания
+        // ========================================
+        recognition.continuous = true       // Не останавливаться после первой фразы
+        recognition.interimResults = true   // Показывать текст пока говорят
+        recognition.lang = 'ru-RU'         // Русский язык
+        recognition.maxAlternatives = 1     // Один вариант распознавания (быстрее)
+
+        // ========================================
+        // Событие: запись началась
+        // ========================================
+        recognition.onstart = () => {
             isListening.value = true
             error.value = null
         }
-        //Результаты распознования
-        recognition.onresult = (e) => {
+
+        // ========================================
+        // Событие: получены результаты распознавания
+        //
+        // event.results — массив результатов
+        // event.resultIndex — индекс первого нового результата
+        // result.isFinal — true если фраза распознана окончательно
+        // result[0].transcript — текст распознавания
+        // ========================================
+        recognition.onresult = (event) => {
             let interim = ''
             let final = ''
 
-            for(let i = e.resultIndex; i < e.results.length; i++) {
-                const result = e.results[i]
-                if(result.isFinal) {
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                const result = event.results[i]
+                if (result.isFinal) {
                     final += result[0].transcript + ' '
-                }else{
+                } else {
                     interim += result[0].transcript
                 }
             }
-            if(final){
+
+            if (final) {
                 transcript.value += final
             }
             interimTranscript.value = interim
         }
-        //Ошибки
-        recognition.onerror = (e) =>{
+
+        // ========================================
+        // Событие: ошибка
+        //
+        // Типичные ошибки:
+        // - no-speech: молчание дольше ~5 сек
+        // - audio-capture: нет микрофона
+        // - not-allowed: пользователь запретил доступ
+        // - network: проблемы с сетью
+        // ========================================
+        recognition.onerror = (event) => {
             const errors = {
                 'no-speech': 'Речь не обнаружена',
                 'audio-capture': 'Микрофон не найден',
-                'not-allowed': 'Доступ к микрофону запрещён'
+                'not-allowed': 'Доступ к микрофону запрещён',
+                'network': 'Ошибка сети'
             }
-            error.value = errors[e.error] || e.error
+
+            // no-speech — не критическая ошибка, авто-перезапуск справится
+            if (event.error === 'no-speech') {
+                return
+            }
+
+            error.value = errors[event.error] || event.error
             isListening.value = false
         }
 
-        //Конец записи
-        recognition.onend = () =>{
-            isListening.value = false
+        // ========================================
+        // Событие: запись остановилась
+        //
+        // КЛЮЧЕВОЙ МОМЕНТ: если пользователь НЕ нажимал Стоп,
+        // значит браузер сам оборвал запись — перезапускаем!
+        // ========================================
+        recognition.onend = () => {
+            if (!manualStop && isListening.value) {
+                // Браузер оборвал — перезапускаем через 100мс
+                // Задержка нужна чтобы браузер успел освободить ресурсы
+                setTimeout(() => {
+                    try {
+                        recognition.start()
+                    } catch (e) {
+                        isListening.value = false
+                    }
+                }, 100)
+            } else {
+                isListening.value = false
+            }
         }
     }
 
-    //Методы
-    function start(){
-        if(!recognition) {
+    // ========================================
+    // Публичные методы
+    // ========================================
+
+    function start() {
+        if (!recognition) {
             error.value = 'Браузер не поддерживает распознавание речи'
             return
         }
+        manualStop = false  // Сбрасываем флаг
         error.value = null
+        transcript.value = ''
+        interimTranscript.value = ''
         recognition.start()
     }
-    function stop(){
-        if(recognition && isListening.value) {
+
+    function stop() {
+        if (recognition && isListening.value) {
+            manualStop = true  // Ставим флаг — не перезапускать!
             recognition.stop()
         }
     }
-    function clear(){
+
+    function clear() {
         transcript.value = ''
         interimTranscript.value = ''
     }
 
-    //Остановка при уничтожении компонента
+    // Очистка при уничтожении компонента
     onUnmounted(() => {
-        if(recognition) {
+        if (recognition) {
+            manualStop = true
             recognition.abort()
         }
     })
+
     return {
         isSupported,
         isListening,

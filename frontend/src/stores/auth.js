@@ -12,7 +12,7 @@ export const authStore = reactive({
         const response = await api.post('/auth/register', {
             email, password,name
         })
-        this.setAuth(response.data.toke, response.data.user)
+        this.setAuth(response.data.token, response.data.user)
         return response.data
     },
     async login(email, password) {
