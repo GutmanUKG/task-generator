@@ -130,7 +130,7 @@ async function save() {
 
 <template>
   <div class="max-w-4xl mx-auto">
-    <h1 class="text-2xl font-bold mb-6">Новое техническое задание</h1>
+    <h1 class="text-xl sm:text-2xl font-bold mb-4 sm:mb-6">Новое техническое задание</h1>
 
     <div v-if="error" class="bg-red-100 text-red-700 p-3 rounded mb-4">
       {{ error }}
@@ -183,21 +183,22 @@ async function save() {
 
         <!-- Пункты раздела -->
         <div v-for="(item, iIdx) in section.items" :key="iIdx"
-             class="flex gap-3 mb-3 items-start">
-          <span class="text-gray-400 mt-2 text-sm">{{ sIdx + 1 }}.{{ iIdx + 1 }}</span>
-
-          <textarea v-model="item.content" rows="2"
-                    class="flex-1 border rounded px-3 py-2 text-sm"
-                    placeholder="Описание пункта"></textarea>
-
-          <input v-model.number="item.timeEstimate" type="number" min="0"
-                 class="w-20 border rounded px-2 py-2 text-sm"
-                 placeholder="мин" title="Оценка времени (минуты)" />
-
-          <button @click="removeItem(sIdx, iIdx)"
-                  class="text-red-400 hover:text-red-600 mt-2">
-            &times;
-          </button>
+             class="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-3 items-stretch sm:items-start">
+          <div class="flex gap-2 sm:gap-3 items-start flex-1">
+            <span class="text-gray-400 mt-2 text-sm shrink-0">{{ sIdx + 1 }}.{{ iIdx + 1 }}</span>
+            <textarea v-model="item.content" rows="2"
+                      class="flex-1 border rounded px-3 py-2 text-sm"
+                      placeholder="Описание пункта"></textarea>
+          </div>
+          <div class="flex gap-2 items-center sm:items-start pl-7 sm:pl-0">
+            <input v-model.number="item.timeEstimate" type="number" min="0"
+                   class="w-20 border rounded px-2 py-2 text-sm"
+                   placeholder="мин" title="Оценка времени (минуты)" />
+            <button @click="removeItem(sIdx, iIdx)"
+                    class="text-red-400 hover:text-red-600">
+              &times;
+            </button>
+          </div>
         </div>
 
         <button @click="addItem(sIdx)"
@@ -208,14 +209,14 @@ async function save() {
     </div>
 
     <!-- Кнопки -->
-    <div class="flex gap-4">
+    <div class="flex flex-wrap gap-3 sm:gap-4">
       <button @click="addSection"
-              class="bg-gray-200 px-4 py-2 rounded hover:bg-gray-300">
+              class="bg-gray-200 px-4 py-2 rounded hover:bg-gray-300 text-sm sm:text-base">
         + Добавить раздел
       </button>
 
       <button @click="save" :disabled="isSaving"
-              class="bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600 disabled:opacity-50">
+              class="bg-green-500 text-white px-4 sm:px-6 py-2 rounded hover:bg-green-600 disabled:opacity-50 text-sm sm:text-base">
         {{ isSaving ? 'Сохранение...' : 'Сохранить ТЗ' }}
       </button>
     </div>

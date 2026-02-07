@@ -11,12 +11,14 @@
 - **База данных:** MySQL + Prisma ORM
 - **Голос:** Web Speech API (Chrome, Edge)
 - **AI:** Ollama (локальная модель qwen2.5:7b)
+- **Удалённый доступ:** ngrok (туннель для доступа с телефона/другого ПК)
 
 ## Требования
 
 - [Node.js](https://nodejs.org/) 18+
 - [MySQL](https://dev.mysql.com/downloads/) 8+
 - [Ollama](https://ollama.com/) для AI-структурирования
+- [ngrok](https://ngrok.com/) для удалённого доступа (опционально)
 - Браузер Chrome или Edge (для Web Speech API)
 
 ## Установка
@@ -92,7 +94,7 @@ cd ../frontend
 npm install
 ```
 
-## Запуск
+## Запуск (локально)
 
 ### Шаг 1: Запусти Ollama
 
@@ -120,9 +122,57 @@ npm run dev
 
 Приложение откроется на http://localhost:5173
 
+## Удалённый доступ (ngrok)
+
+Ngrok позволяет открыть приложение с телефона, другого ПК или из другой Wi-Fi сети. Твой домашний ПК работает как сервер — ngrok создаёт публичный HTTPS-туннель к нему.
+
+### Установка ngrok
+
+1. Зарегистрируйся на https://ngrok.com (бесплатно)
+2. Скачай ngrok с https://ngrok.com/download
+3. Авторизуйся (токен из Dashboard):
+
+```bash
+ngrok config add-authtoken ТВОЙ_AUTHTOKEN
+```
+
+### Запуск с ngrok
+
+```bash
+# Терминал 1: Ollama (если не запущена автоматически)
+ollama serve
+
+# Терминал 2: Backend
+cd backend
+npm run dev
+
+# Терминал 3: Frontend
+cd frontend
+npm run dev
+
+# Терминал 4: Ngrok туннель
+ngrok http 5173
+```
+
+Ngrok покажет публичный URL вида `https://xxxxx.ngrok-free.app` — открой его на телефоне или другом ПК.
+
+> Vite проксирует API-запросы (`/api/*`) на backend (`localhost:3000`), поэтому достаточно одного туннеля.
+
+### Бесплатный статический домен
+
+На бесплатном плане URL меняется при каждом перезапуске. Чтобы получить постоянный URL:
+
+1. Перейди в https://dashboard.ngrok.com/domains
+2. Нажми "New Domain" — получишь домен вида `кое-что.ngrok-free.app`
+3. Запускай:
+
+```bash
+ngrok http --domain=твой-домен.ngrok-free.app 5173
+```
+
 ## Использование
 
-1. **Регистрация** — зайди на http://localhost:5173/register и создай аккаунт
+1. **Регистрация** — зайди на /register и создай аккаунт
 2. **Создай проект** — перейди в "Проекты" и создай новый проект
 3. **Запиши голос** — перейди в "Записать", нажми "Начать запись" и опиши требования к проекту
 4. **Создай ТЗ** — нажми "Создать ТЗ", выбери проект, нажми "Структурировать через AI"
@@ -160,6 +210,7 @@ task-generator/
 │   │   ├── composables/          # Composables (useSpeechRecognition)
 │   │   ├── components/           # Переиспользуемые компоненты
 │   │   └── pages/                # Страницы приложения
+│   ├── vite.config.js            # Настройки Vite (proxy, ngrok)
 │   └── package.json
 │
 ├── COURSE.md                     # Пошаговый курс по созданию проекта
@@ -230,4 +281,22 @@ npx prisma db pull
 
 - Используй Chrome или Edge
 - Разреши доступ к микрофону
-- Сайт должен работать на localhost или HTTPS
+- Сайт должен работать на localhost или HTTPS (ngrok даёт HTTPS)
+
+### Ngrok: "Blocked request" / "host is not allowed"
+
+Vite блокирует запросы с незнакомого хоста. В `frontend/vite.config.js` уже настроен `allowedHosts` для ngrok-доменов. Если ошибка повторяется, добавь свой домен:
+
+```javascript
+server: {
+  allowedHosts: ['.ngrok-free.dev', '.ngrok.io']
+}
+```
+
+### Ngrok: ERR_NGROK_8012
+
+Убедись что frontend запущен на правильном порту:
+
+```bash
+ngrok http 5173    # Порт Vite, НЕ 5171 или 3000
+```

@@ -105,18 +105,18 @@ async function deleteProject(id) {
 
 <template>
   <div>
-    <div class="flex justify-between items-center mb-6">
-      <h1 class="text-2xl font-bold">Проекты</h1>
+    <div class="flex justify-between items-center mb-4 sm:mb-6">
+      <h1 class="text-xl sm:text-2xl font-bold">Проекты</h1>
       <button @click="openCreate"
-              class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+              class="bg-blue-500 text-white px-3 sm:px-4 py-2 rounded hover:bg-blue-600 text-sm sm:text-base">
         + Новый проект
       </button>
     </div>
 
     <!-- Форма создания/редактирования (модальное окно) -->
 
-    <div v-if="showForm" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div class="bg-white rounded-lg p-6 w-full max-w-md">
+    <div v-if="showForm" class="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
+      <div class="bg-white rounded-t-lg sm:rounded-lg p-6 w-full sm:max-w-md">
         <h2 class="text-xl font-bold mb-4">
           {{ editingId ? 'Редактировать проект' : 'Новый проект' }}
         </h2>

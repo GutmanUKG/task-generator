@@ -20,16 +20,38 @@ export function useSpeechRecognition() {
     // Нужен чтобы отличить "браузер оборвал" от "нажали Стоп"
     let manualStop = false
 
+    // ========================================
+    // Защита от дублей на мобильных
+    //
+    // Проблема: на мобильных Chrome continuous mode
+    // при авто-перезапуске (onend → start) отдаёт
+    // одни и те же результаты повторно — получается "эхо".
+    //
+    // Решение: НЕ используем continuous на мобильных.
+    // Вместо этого — ручной перезапуск после каждого
+    // финального результата. Текст предыдущих сессий
+    // храним в previousText и подставляем при каждом onresult.
+    // ========================================
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+
+    // Текст, накопленный за предыдущие сессии recognition
+    // (каждый перезапуск — новая сессия)
+    let previousText = ''
+
     if (isSupported) {
         recognition = new SpeechRecognition()
 
         // ========================================
         // Настройки распознавания
+        //
+        // На мобильных отключаем continuous —
+        // он вызывает дубли. Вместо этого перезапускаем
+        // вручную в onend.
         // ========================================
-        recognition.continuous = true       // Не останавливаться после первой фразы
-        recognition.interimResults = true   // Показывать текст пока говорят
-        recognition.lang = 'ru-RU'         // Русский язык
-        recognition.maxAlternatives = 1     // Один вариант распознавания (быстрее)
+        recognition.continuous = !isMobile
+        recognition.interimResults = true
+        recognition.lang = 'ru-RU'
+        recognition.maxAlternatives = 1
 
         // ========================================
         // Событие: запись началась
@@ -42,27 +64,26 @@ export function useSpeechRecognition() {
         // ========================================
         // Событие: получены результаты распознавания
         //
-        // event.results — массив результатов
-        // event.resultIndex — индекс первого нового результата
-        // result.isFinal — true если фраза распознана окончательно
-        // result[0].transcript — текст распознавания
+        // Стратегия: каждый раз пересобираем ВЕСЬ текст
+        // из event.results (финальные) + previousText
+        // (от предыдущих сессий). Это гарантирует отсутствие
+        // дублей — мы не дописываем, а заменяем целиком.
         // ========================================
         recognition.onresult = (event) => {
+            let sessionFinal = ''
             let interim = ''
-            let final = ''
 
-            for (let i = event.resultIndex; i < event.results.length; i++) {
+            for (let i = 0; i < event.results.length; i++) {
                 const result = event.results[i]
                 if (result.isFinal) {
-                    final += result[0].transcript + ' '
+                    sessionFinal += result[0].transcript + ' '
                 } else {
                     interim += result[0].transcript
                 }
             }
 
-            if (final) {
-                transcript.value += final
-            }
+            // Пересобираем полный текст: предыдущие сессии + текущая
+            transcript.value = previousText + sessionFinal
             interimTranscript.value = interim
         }
 
@@ -97,10 +118,15 @@ export function useSpeechRecognition() {
         //
         // КЛЮЧЕВОЙ МОМЕНТ: если пользователь НЕ нажимал Стоп,
         // значит браузер сам оборвал запись — перезапускаем!
+        //
+        // Перед перезапуском сохраняем текущий transcript
+        // в previousText, чтобы новая сессия начала с чистого
+        // event.results, а мы не потеряли старый текст.
         // ========================================
         recognition.onend = () => {
             if (!manualStop && isListening.value) {
-                // Браузер оборвал — перезапускаем через 100мс
+                // Сохраняем накопленный текст перед перезапуском
+                previousText = transcript.value
                 // Задержка нужна чтобы браузер успел освободить ресурсы
                 setTimeout(() => {
                     try {
@@ -108,7 +134,7 @@ export function useSpeechRecognition() {
                     } catch (e) {
                         isListening.value = false
                     }
-                }, 100)
+                }, 200)
             } else {
                 isListening.value = false
             }
@@ -124,7 +150,8 @@ export function useSpeechRecognition() {
             error.value = 'Браузер не поддерживает распознавание речи'
             return
         }
-        manualStop = false  // Сбрасываем флаг
+        manualStop = false
+        previousText = ''
         error.value = null
         transcript.value = ''
         interimTranscript.value = ''
@@ -141,6 +168,7 @@ export function useSpeechRecognition() {
     function clear() {
         transcript.value = ''
         interimTranscript.value = ''
+        previousText = ''
     }
 
     // Очистка при уничтожении компонента

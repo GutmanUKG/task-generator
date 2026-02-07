@@ -52,10 +52,10 @@ function formatTime(minutes) {
       <p v-if="project.description" class="text-gray-500 mb-6">{{ project.description }}</p>
 
       <!-- Заголовок секции ТЗ + кнопка создания -->
-      <div class="flex items-center justify-between mb-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2">
         <h2 class="text-lg font-semibold">Технические задания</h2>
         <router-link to="/record"
-                     class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 text-sm">
+                     class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 text-sm text-center">
           + Создать ТЗ
         </router-link>
       </div>
@@ -72,7 +72,7 @@ function formatTime(minutes) {
         <router-link v-for="spec in project.specifications" :key="spec.id"
                      :to="`/specifications/${spec.id}`"
                      class="block bg-white rounded-lg shadow p-5 hover:shadow-md transition-shadow">
-          <div class="flex justify-between items-start">
+          <div class="flex flex-col sm:flex-row justify-between items-start gap-1">
             <div>
               <h3 class="font-semibold">{{ spec.title }}</h3>
               <p class="text-sm text-gray-400 mt-1">

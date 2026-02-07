@@ -14,10 +14,7 @@ const aiRoutes = require('./routes/ai')
 //
 const specRoutes = require('./routes/specifications')
 // Middleware
-app.use(cors({
-    origin: 'http://localhost:5173', //Адресс для dev Vue сервера
-    credentials: true
-}))
+app.use(cors())
 
 app.use(express.json())
 

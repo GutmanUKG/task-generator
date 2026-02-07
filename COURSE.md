@@ -3042,6 +3042,303 @@ async function saveChanges() {
 
 ---
 
+## Урок 11.6: Статус ТЗ ⬜
+
+### Теория
+
+Добавим поле `status` в модель `Specification`, чтобы отслеживать состояние ТЗ: черновик, в работе, выполнено.
+
+Статусы:
+- `draft` — черновик (по умолчанию)
+- `in_progress` — в работе
+- `completed` — выполнено
+
+### Шаг 1: Обнови схему Prisma
+
+В файле `backend/prisma/schema.prisma` добавь поле `status` в модель `Specification`:
+
+```prisma
+model Specification{
+  id Int @id @default(autoincrement())
+  title String
+  status String @default("draft") // draft, in_progress, completed
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  projectId Int
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  userId Int
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  sections Section[]
+}
+```
+
+Затем примени миграцию:
+
+```bash
+cd backend
+npx prisma migrate dev --name add-spec-status
+```
+
+### Шаг 2: Бэкенд — эндпоинт смены статуса
+
+В файле `backend/src/controllers/specificationController.js` добавь функцию `updateStatus`:
+
+```javascript
+/**
+ * PATCH /api/specifications/:id/status
+ *
+ * Обновить статус ТЗ
+ * Body: { status: "draft" | "in_progress" | "completed" }
+ */
+async function updateStatus(req, res) {
+  try {
+    const id = parseInt(req.params.id)
+    const { status } = req.body
+
+    // Валидация статуса
+    const validStatuses = ['draft', 'in_progress', 'completed']
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        error: `Невалидный статус. Допустимые: ${validStatuses.join(', ')}`
+      })
+    }
+
+    // Проверяем что ТЗ существует и принадлежит пользователю
+    const existing = await prisma.specification.findFirst({
+      where: { id, userId: req.userId }
+    })
+    if (!existing) {
+      return res.status(404).json({ error: 'ТЗ не найдено' })
+    }
+
+    const updated = await prisma.specification.update({
+      where: { id },
+      data: { status },
+      include: {
+        sections: {
+          orderBy: { position: 'asc' },
+          include: {
+            items: { orderBy: { position: 'asc' } }
+          }
+        }
+      }
+    })
+
+    res.json(updated)
+  } catch (error) {
+    console.error('Ошибка обновления статуса:', error)
+    res.status(500).json({ error: 'Ошибка сервера' })
+  }
+}
+```
+
+Не забудь добавить `updateStatus` в `module.exports`:
+
+```javascript
+module.exports = { generate, getById, getAll, update, updateStatus }
+```
+
+### Шаг 3: Бэкенд — роут
+
+В файле `backend/src/routes/specifications.js` добавь роут:
+
+```javascript
+const { generate, getById, getAll, update, updateStatus } = require('../controllers/specificationController')
+
+// ... существующие роуты ...
+router.patch('/:id/status', updateStatus)
+```
+
+> **Почему PATCH, а не PUT?** `PUT` обновляет весь ресурс целиком, а `PATCH` — только часть (в нашем случае только поле `status`).
+
+### Шаг 4: Фронтенд — отображение и смена статуса
+
+В файле `frontend/src/pages/SpecificationPage.vue` добавь логику статусов.
+
+**В `<script setup>`** добавь:
+
+```javascript
+// Маппинг статусов на русские названия и цвета
+const statusMap = {
+  draft: { label: 'Черновик', color: 'bg-gray-200 text-gray-700' },
+  in_progress: { label: 'В работе', color: 'bg-blue-100 text-blue-700' },
+  completed: { label: 'Выполнено', color: 'bg-green-100 text-green-700' }
+}
+
+// Смена статуса
+async function changeStatus(newStatus) {
+  try {
+    const response = await api.patch(`/specifications/${route.params.id}/status`, {
+      status: newStatus
+    })
+    spec.value = response.data
+  } catch (e) {
+    error.value = e.response?.data?.error || 'Ошибка смены статуса'
+  }
+}
+```
+
+**В `<template>`** — добавь бейдж статуса рядом с заголовком и кнопки смены:
+
+```html
+<!-- Заголовок + статус + общее время -->
+<div class="flex items-center justify-between mb-6">
+  <div class="flex items-center gap-3">
+    <h1 class="text-2xl font-bold">{{ spec.title }}</h1>
+    <span :class="['text-xs px-2 py-1 rounded-full font-medium',
+      statusMap[spec.status]?.color || 'bg-gray-200']">
+      {{ statusMap[spec.status]?.label || spec.status }}
+    </span>
+  </div>
+  <span class="text-sm text-gray-500">
+    Общее время: {{ formatTime(totalTime()) }}
+  </span>
+</div>
+
+<!-- Кнопки смены статуса (в режиме просмотра) -->
+<div v-if="!isEditing" class="flex gap-2 mb-6">
+  <button v-if="spec.status !== 'draft'" @click="changeStatus('draft')"
+    class="text-sm px-3 py-1 rounded bg-gray-200 hover:bg-gray-300">
+    Черновик
+  </button>
+  <button v-if="spec.status !== 'in_progress'" @click="changeStatus('in_progress')"
+    class="text-sm px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200">
+    В работе
+  </button>
+  <button v-if="spec.status !== 'completed'" @click="changeStatus('completed')"
+    class="text-sm px-3 py-1 rounded bg-green-100 text-green-700 hover:bg-green-200">
+    Выполнено
+  </button>
+</div>
+```
+
+### Проверка
+
+1. Примени миграцию (`npx prisma migrate dev --name add-spec-status`)
+2. Открой ТЗ — должен отображаться бейдж "Черновик"
+3. Нажми "В работе" — статус изменится на синий
+4. Нажми "Выполнено" — статус станет зелёным
+5. Проверь что статус сохраняется после перезагрузки страницы
+
+---
+
+## Урок 11.7: Удаление ТЗ ⬜
+
+### Теория
+
+Добавим возможность удалять ТЗ. Благодаря `onDelete: Cascade` в схеме Prisma, при удалении Specification автоматически удалятся все связанные Section и Item.
+
+Важно: перед удалением показываем диалог подтверждения, чтобы пользователь не удалил ТЗ случайно.
+
+### Шаг 1: Бэкенд — контроллер
+
+В файле `backend/src/controllers/specificationController.js` добавь функцию `remove`:
+
+```javascript
+/**
+ * DELETE /api/specifications/:id
+ *
+ * Удалить ТЗ (каскадно удалятся секции и пункты)
+ */
+async function remove(req, res) {
+  try {
+    const id = parseInt(req.params.id)
+
+    // Проверяем что ТЗ существует и принадлежит пользователю
+    const existing = await prisma.specification.findFirst({
+      where: { id, userId: req.userId }
+    })
+    if (!existing) {
+      return res.status(404).json({ error: 'ТЗ не найдено' })
+    }
+
+    await prisma.specification.delete({
+      where: { id }
+    })
+
+    res.json({ message: 'ТЗ удалено' })
+  } catch (error) {
+    console.error('Ошибка удаления ТЗ:', error)
+    res.status(500).json({ error: 'Ошибка сервера' })
+  }
+}
+```
+
+Обнови `module.exports`:
+
+```javascript
+module.exports = { generate, getById, getAll, update, updateStatus, remove }
+```
+
+### Шаг 2: Бэкенд — роут
+
+В файле `backend/src/routes/specifications.js`:
+
+```javascript
+const { generate, getById, getAll, update, updateStatus, remove } = require('../controllers/specificationController')
+
+// ... существующие роуты ...
+router.delete('/:id', remove)
+```
+
+### Шаг 3: Фронтенд — кнопка удаления
+
+В файле `frontend/src/pages/SpecificationPage.vue` добавь логику удаления.
+
+**В `<script setup>`** добавь:
+
+```javascript
+import { useRouter } from 'vue-router'
+
+const router = useRouter()
+
+// Удаление ТЗ с подтверждением
+async function deleteSpec() {
+  if (!confirm('Удалить это ТЗ? Все секции и пункты будут удалены безвозвратно.')) {
+    return
+  }
+
+  try {
+    await api.delete(`/specifications/${route.params.id}`)
+    router.push('/dashboard')
+  } catch (e) {
+    error.value = e.response?.data?.error || 'Ошибка удаления'
+  }
+}
+```
+
+> **Примечание:** `useRoute` для чтения параметров URL у тебя уже импортирован. Теперь нужен ещё `useRouter` для программной навигации (`router.push`). Это разные вещи: `route` — текущий маршрут, `router` — навигатор.
+
+**В `<template>`** — добавь кнопку удаления рядом с кнопкой "Редактировать":
+
+```html
+<!-- Кнопки действий (в режиме просмотра) -->
+<div v-if="!isEditing" class="flex gap-2 mb-6">
+  <button @click="startEditing"
+    class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 text-sm">
+    Редактировать
+  </button>
+  <button @click="deleteSpec"
+    class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 text-sm">
+    Удалить
+  </button>
+</div>
+```
+
+> Замени старую одиночную кнопку "Редактировать" на этот блок с двумя кнопками.
+
+### Проверка
+
+1. Открой любое ТЗ
+2. Нажми "Удалить"
+3. В диалоге нажми "OK" — ТЗ удалится, тебя перенаправит на главную
+4. Проверь что ТЗ пропало из списка
+5. Нажми "Отмена" в диалоге — ничего не произойдёт
+
+---
+
 # ЧАСТЬ 12: AI-СТРУКТУРИРОВАНИЕ ЧЕРЕЗ OLLAMA ✅
 
 ## Урок 12.1: Установка и настройка Ollama ✅
@@ -4192,6 +4489,249 @@ app.use('/api/bitrix', bitrixRoutes)
 
 ---
 
+# ЧАСТЬ 17: УДАЛЁННЫЙ ДОСТУП ЧЕРЕЗ NGROK ✅
+
+## Урок 17.1: Что такое ngrok и зачем он нужен ✅
+
+### Теория
+
+Сейчас приложение работает на `localhost` — это значит, что зайти можно только с того же ПК. Но что если ты хочешь:
+- Открыть приложение с телефона
+- Работать с другого компьютера (на работе, у друга)
+- Подключиться из другой Wi-Fi сети или через мобильный интернет
+
+**Проблема:** твой домашний ПК находится за роутером (NAT), у него нет публичного IP. Устройства из интернета не могут к нему обратиться напрямую.
+
+**Решение: ngrok** — это сервис, который создаёт туннель между интернетом и твоим localhost. Он даёт тебе публичный URL (например `https://abc123.ngrok-free.app`), и все запросы на этот URL перенаправляются на твой ПК.
+
+```
+Телефон/Другой ПК
+       ↓
+https://abc123.ngrok-free.app    (публичный URL в интернете)
+       ↓
+Серверы ngrok                    (перенаправляют трафик)
+       ↓
+Твой ПК → localhost:3000         (backend + Ollama)
+```
+
+**Ответ на главный вопрос: да, это работает из ЛЮБОЙ сети** — другой Wi-Fi, мобильный интернет, из другого города. Единственное условие — твой домашний ПК должен быть включён и подключён к интернету.
+
+---
+
+## Урок 17.2: Установка и настройка ngrok ✅
+
+### Шаг 1: Регистрация
+
+1. Перейди на https://ngrok.com и зарегистрируйся (бесплатно)
+2. После входа ты попадёшь в Dashboard
+3. Скопируй свой **Authtoken** (на странице https://dashboard.ngrok.com/get-started/your-authtoken)
+
+### Шаг 2: Установка ngrok
+
+**Windows (через Chocolatey):**
+```bash
+choco install ngrok
+```
+
+**Или скачай вручную:**
+1. Перейди на https://ngrok.com/download
+2. Скачай ZIP для Windows
+3. Распакуй `ngrok.exe` в удобную папку (например `C:\ngrok\`)
+4. Добавь эту папку в PATH (или запускай через полный путь)
+
+**Проверка установки:**
+```bash
+ngrok version
+```
+
+### Шаг 3: Авторизация
+
+Выполни команду (вставь свой токен):
+
+```bash
+ngrok config add-authtoken ТВОЙ_AUTHTOKEN
+```
+
+Это нужно сделать один раз. Токен сохранится в конфигурации.
+
+---
+
+## Урок 17.3: Настройка приложения для удалённого доступа ✅
+
+### Теория
+
+Перед тем как открывать туннель, нужно подготовить приложение:
+
+1. **Frontend** должен знать адрес backend. Сейчас он обращается к `http://localhost:3000`, но с телефона этот адрес недоступен
+2. **CORS** на backend должен разрешать запросы с ngrok-домена
+3. **Web Speech API** работает только на `localhost` или `HTTPS`. Ngrok даёт HTTPS — значит речь будет работать
+
+### Шаг 1: Настрой Frontend для работы через прокси
+
+В файле `frontend/vite.config.js` добавь настройку прокси, чтобы frontend пробрасывал API-запросы на backend:
+
+```javascript
+import { defineConfig } from 'vite'
+import vue from '@vitejs/plugin-vue'
+
+export default defineConfig({
+  plugins: [vue()],
+  server: {
+    host: '0.0.0.0',  // Разрешить доступ извне (не только localhost)
+    allowedHosts: ['.ngrok-free.dev', '.ngrok.io'], // Разрешить запросы через ngrok
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3000',
+        changeOrigin: true
+      }
+    }
+  }
+})
+```
+
+> **`host: '0.0.0.0'`** — по умолчанию Vite слушает только localhost. С этой настройкой он принимает подключения с любого адреса.
+
+### Шаг 2: Обнови API-клиент на frontend
+
+В файле `frontend/src/api/index.js` измени `baseURL`, чтобы он работал и локально, и через ngrok:
+
+```javascript
+import axios from 'axios'
+
+const api = axios.create({
+  baseURL: '/api'  // Относительный путь — запросы пойдут на тот же хост
+})
+
+// ... остальной код (интерсептор с токеном) без изменений
+```
+
+> **Почему `/api` вместо `http://localhost:3000/api`?**
+> Когда baseURL относительный, axios отправляет запросы на тот же хост, откуда загружена страница. Локально это `localhost:5173` (Vite проксирует на `:3000`). Через ngrok это `https://abc123.ngrok-free.app` — и запросы всё равно дойдут до backend.
+
+### Шаг 3: Обнови CORS на backend
+
+В файле `backend/src/index.js` разреши запросы с любых доменов (для разработки):
+
+```javascript
+app.use(cors())  // Без аргументов — разрешает все домены
+```
+
+> Если у тебя уже `cors()` без аргументов — ничего менять не нужно.
+
+---
+
+## Урок 17.4: Запуск туннеля ✅
+
+### Вариант A: Проксировать Frontend (рекомендуется)
+
+В этом варианте ngrok пробрасывает Vite dev server. Vite сам проксирует API-запросы на backend. Один туннель — всё работает.
+
+**Шаг 1:** Запусти все сервисы (каждый в отдельном терминале):
+
+```bash
+# Терминал 1: Ollama (если не запущена)
+ollama serve
+
+# Терминал 2: Backend
+cd backend
+npm run dev
+
+# Терминал 3: Frontend
+cd frontend
+npm run dev
+```
+
+**Шаг 2:** Открой ещё один терминал и запусти ngrok:
+
+```bash
+ngrok http 5173
+```
+
+Ты увидишь что-то вроде:
+
+```
+Session Status    online
+Forwarding        https://a1b2c3d4.ngrok-free.app -> http://localhost:5173
+```
+
+**Шаг 3:** Открой URL `https://a1b2c3d4.ngrok-free.app` на телефоне или другом ПК. Готово!
+
+### Вариант B: Два туннеля (если не используешь прокси Vite)
+
+Если по какой-то причине ты не хочешь проксировать через Vite:
+
+```bash
+# Терминал 4: Туннель для backend
+ngrok http 3000
+
+# Терминал 5: Туннель для frontend
+ngrok http 5173
+```
+
+Тогда в `frontend/src/api/index.js` нужно указать полный URL backend-туннеля:
+
+```javascript
+const api = axios.create({
+  baseURL: 'https://xyz789.ngrok-free.app/api'  // URL из ngrok для backend
+})
+```
+
+> Вариант A проще — один туннель вместо двух.
+
+---
+
+## Урок 17.5: Особенности и ограничения ✅
+
+### Бесплатный план ngrok
+
+- URL **меняется** при каждом перезапуске ngrok (случайный поддомен)
+- Для **постоянного URL** нужен платный план ($8/мес) или использовать бесплатный статический домен (ngrok даёт 1 бесплатно)
+- Максимум **20 подключений в минуту** на бесплатном плане
+- При первом заходе ngrok показывает страницу-предупреждение ("Visit Site") — это нормально, нажми кнопку
+
+### Получить бесплатный статический домен
+
+ngrok даёт один бесплатный статический домен:
+
+1. Перейди в https://dashboard.ngrok.com/domains
+2. Нажми "New Domain" — получишь домен вида `кое-что.ngrok-free.app`
+3. Запускай ngrok с этим доменом:
+
+```bash
+ngrok http --domain=твой-домен.ngrok-free.app 5173
+```
+
+Теперь URL не меняется при перезапуске.
+
+### Важные моменты
+
+| Вопрос | Ответ |
+|--------|-------|
+| Работает из другой Wi-Fi? | Да, из любой сети с интернетом |
+| Работает с мобильного интернета? | Да |
+| Работает из другого города/страны? | Да |
+| Нужен ли белый IP? | Нет, ngrok решает эту проблему |
+| ПК должен быть включён? | Да, и backend, и Ollama должны работать |
+| Речь будет работать? | Да, ngrok даёт HTTPS, а Web Speech API работает на HTTPS |
+| Безопасно ли это? | Для разработки — да. Для продакшена лучше VPS |
+
+### Альтернативы ngrok
+
+- **Cloudflare Tunnel** — бесплатно, стабильный URL, но сложнее настройка
+- **Tailscale** — VPN-сеть между устройствами, работает без публичного URL (нужно приложение на каждом устройстве)
+- **localhost.run** — `ssh -R 80:localhost:5173 nokey@localhost.run` — без установки, но менее стабильно
+
+### Проверка
+
+1. Запусти backend, frontend и ngrok
+2. Скопируй ngrok URL
+3. Открой URL **с телефона** (через мобильный интернет, не домашний Wi-Fi!)
+4. Залогинься в свой аккаунт
+5. Попробуй записать голос и создать ТЗ
+6. Убедись что данные сохранились (открой с ПК — ТЗ на месте)
+
+---
+
 # ИТОГОВАЯ СТРУКТУРА ПРОЕКТА
 
 ```
@@ -4294,4 +4834,5 @@ npm run build            # Сборка для продакшена
 8. Добавить Drag & Drop (Часть 14)
 9. Добавить PDF-экспорт (Часть 15)
 10. Интегрировать Bitrix24 (Часть 16)
-11. Опционально: серверная транскрибация (Часть 8.2)
+11. Удалённый доступ через ngrok (Часть 17)
+12. Опционально: серверная транскрибация (Часть 8.2)

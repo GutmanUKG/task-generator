@@ -1,6 +1,6 @@
 import axios from "axios";
 const api = axios.create({
-    baseURL: 'http://localhost:3000/api',
+    baseURL: '/api',// Относительный путь — запросы пойдут на тот же хост
     headers: {
         'Content-Type': 'application/json'
     }
