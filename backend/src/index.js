@@ -1,6 +1,6 @@
 const express = require('express')
 const cors = require('cors')
-
+const path = require('path')
 require('dotenv').config()
 
 const authRoutes = require('./routes/auth')
@@ -13,6 +13,18 @@ const projectRoutes = require('./routes/projects')
 const aiRoutes = require('./routes/ai')
 //
 const specRoutes = require('./routes/specifications')
+//Список crm
+const crmRoutes = require('./routes/crm')
+
+//Промты
+const promptRoutes = require('./routes/prompts')
+//Админские роуты
+const adminRoutes = require('./routes/admin')
+//Экспорт
+const exportRoutes = require('./routes/export')
+//подгрузка файлов к пунктам
+const attachmentRoutes = require('./routes/attachments')
+
 // Middleware
 app.use(cors())
 
@@ -28,6 +40,20 @@ app.use('/api/projects', projectRoutes)
 app.use('/api/ai', aiRoutes)
 //
 app.use('/api/specifications', specRoutes)
+////Промты
+app.use('/api/prompts', promptRoutes)
+
+//Админские роуты
+app.use('/api/admin', adminRoutes)
+
+app.use('/api/crm', crmRoutes)
+//Экспорт
+app.use('/api/export', exportRoutes)
+
+// Раздача загруженных файлов по URL /uploads/filename.jpg
+
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')))
+app.use('/api/attachments', attachmentRoutes)
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok' })
 })

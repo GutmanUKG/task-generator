@@ -2,46 +2,34 @@
   import { ref, onMounted } from 'vue'
   import { useRoute } from 'vue-router'
   import api from '../api'
+  import ItemAttachments from '../components/ItemAttachments.vue'
 
   const route = useRoute()
   const spec = ref(null)
   const loading = ref(true)
   const error = ref('')
 
-
-  // ========================================
-  // Режим редактирования
-  //
-  // isEditing — переключатель просмотр/редактирование
-  // editTitle — редактируемый заголовок
-  // editSections — редактируемые секции (копия данных)
-  //
-  // Работаем с копией, чтобы можно было отменить изменения
-  // ========================================
   const isEditing = ref(false)
   const editTitle = ref('')
   const editSections = ref([])
   const isSaving = ref(false)
+  const isExporting = ref(false)
 
-
-  // ========================================
-  // Загружаем ТЗ по ID из URL
-  //
-  // GET /api/specifications/:id
-  // Возвращает: { title, sections: [{ title, items: [...] }] }
-  // ========================================
-
-  onMounted(async () =>{
-    try{
+  async function loadSpecification() {
+    try {
       const response = await api.get(`/specifications/${route.params.id}`)
       spec.value = response.data
-    }catch (e) {
+    } catch (e) {
       error.value = e.response?.data?.error || 'Ошибка загрузки ТЗ'
-    }finally {
+    } finally {
       loading.value = false
     }
+  }
+
+  onMounted(() => {
+    loadSpecification()
   })
-  // Форматирование минут в "X ч Y мин"
+
   function formatTime(minutes) {
     if (!minutes) return ''
     if (minutes < 60) return `${minutes} мин`
@@ -49,47 +37,63 @@
     const m = minutes % 60
     return m ? `${h} ч ${m} мин` : `${h} ч`
   }
-  // Суммарное время всех пунктов
+
   function totalTime() {
     if (!spec.value) return 0
     return spec.value.sections.reduce((sum, s) =>
         sum + s.items.reduce((iSum, item) => iSum + (item.timeEstimate || 0), 0), 0)
   }
 
-  // Включить режим редактирования
-  // JSON.parse(JSON.stringify(...)) — глубокая копия объекта
   function startEditing(){
     editTitle.value = spec.value.title
     editSections.value = JSON.parse(JSON.stringify(spec.value.sections))
     isEditing.value = true
   }
-  // Отменить редактирование
+
   function cancelEditing() {
     isEditing.value = false
   }
-  // Добавить раздел
+
   function addSection(){
     editSections.value.push({
       title: 'Новый раздел',
       items: [{content : '', timeEstimate: null}]
     })
   }
-  // Добавить пункт в раздел
+
   function addItem(sIdx){
     editSections.value[sIdx].items.push({
       content: '',
       timeEstimate: null
     })
   }
-  // Удалить пункт
+
   function removeItem(sIdx, iIdx) {
     editSections.value[sIdx].items.splice(iIdx, 1)
   }
-  // Удалить раздел
+
   function removeSection(sIdx) {
     editSections.value.splice(sIdx, 1)
   }
-  // Сохранить изменения
+
+  async function exportDoc() {
+    isExporting.value = true
+    try {
+      const response = await api.get(`/export/doc/${route.params.id}`, {
+        responseType: 'blob'
+      })
+      const url = URL.createObjectURL(response.data)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `tz-${route.params.id}.docx`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      error.value = 'Ошибка экспорта в DOC'
+    } finally {
+      isExporting.value = false
+    }
+  }
 
   async function saveChanges (){
     isSaving.value = true
@@ -109,46 +113,64 @@
 </script>
 <template>
   <div class="max-w-4xl mx-auto">
-    <div v-if="loading" class="text-center py-12 text-gray-500">Загрузкa...</div>
-    <div v-else-if="error" class="bg-red-100 text-red-700 p-4 rounded">{{error}}</div>
+    <div v-if="loading" class="flex justify-center py-12">
+      <span class="loading loading-spinner loading-lg"></span>
+    </div>
+
+    <div v-else-if="error" role="alert" class="alert alert-error">
+      <span>{{ error }}</span>
+    </div>
+
     <div v-else-if="spec">
       <!-- Заголовок + общее время -->
       <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-4 sm:mb-6 gap-2">
         <h1 class="text-xl sm:text-2xl font-bold">{{ spec.title }}</h1>
-        <span class="text-sm text-gray-500">
+        <span class="badge badge-lg badge-ghost">
           Общее время: {{ formatTime(totalTime()) }}
         </span>
       </div>
 
-      <!-- Кнопка редактирования (в режиме просмотра) -->
-      <button v-if="!isEditing" @click="startEditing"
-        class="mb-4 sm:mb-6 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 text-sm">
-        Редактировать
-      </button>
+      <!-- Кнопки действий (в режиме просмотра) -->
+      <div v-if="!isEditing" class="flex gap-3 mb-4 sm:mb-6">
+        <button @click="startEditing" class="btn btn-primary btn-sm">
+          Редактировать
+        </button>
+        <button @click="exportDoc" :disabled="isExporting" class="btn btn-secondary btn-sm">
+          <span v-if="isExporting" class="loading loading-spinner loading-sm"></span>
+          {{ isExporting ? 'Экспорт...' : 'Скачать DOCX' }}
+        </button>
+      </div>
 
       <!-- ===== РЕЖИМ ПРОСМОТРА ===== -->
       <template v-if="!isEditing">
         <div v-for="(section, sIdx) in spec.sections" :key="section.id"
-          class="bg-white rounded-lg shadow p-4 sm:p-6 mb-3 sm:mb-4">
-          <h2 class="text-base sm:text-lg font-semibold mb-3 sm:mb-4">{{ sIdx + 1 }}. {{ section.title }}</h2>
+          class="card bg-base-100 shadow-md mb-3 sm:mb-4">
+          <div class="card-body p-4 sm:p-6">
+            <h2 class="card-title text-base sm:text-lg">{{ sIdx + 1 }}. {{ section.title }}</h2>
 
-          <div v-for="(item, iIdx) in section.items" :key="item.id"
-            class="py-2 border-b last:border-0">
-            <div class="flex items-start gap-2">
-              <span class="text-gray-400 text-xs sm:text-sm shrink-0 mt-0.5">{{ sIdx + 1 }}.{{ iIdx + 1 }}</span>
-              <div class="flex-1 min-w-0">
-                <p class="text-sm break-words">{{ item.content }}</p>
-                <span v-if="item.timeEstimate"
-                  class="inline-block mt-1 text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
-                  {{ formatTime(item.timeEstimate) }}
-                </span>
+            <div v-for="(item, iIdx) in section.items" :key="item.id"
+              class="py-2 border-b border-base-200 last:border-0">
+              <div class="flex items-start gap-2">
+                <span class="text-base-content/40 text-xs sm:text-sm shrink-0 mt-0.5">{{ sIdx + 1 }}.{{ iIdx + 1 }}</span>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm break-words">{{ item.content }}</p>
+                  <span v-if="item.timeEstimate"
+                    class="badge badge-sm badge-ghost mt-1">
+                    {{ formatTime(item.timeEstimate) }}
+                  </span>
+                  <!-- Скриншоты пункта -->
+                  <ItemAttachments
+                    :item-id="item.id"
+                    :attachments="item.attachments || []"
+                    @updated="loadSpecification" />
+                </div>
               </div>
             </div>
           </div>
         </div>
 
         <router-link to="/dashboard"
-          class="inline-block mt-4 text-blue-500 hover:text-blue-700 text-sm sm:text-base">
+          class="link link-primary text-sm sm:text-base mt-4 inline-block">
           &larr; На главную
         </router-link>
       </template>
@@ -156,62 +178,67 @@
       <!-- ===== РЕЖИМ РЕДАКТИРОВАНИЯ ===== -->
       <template v-else>
         <!-- Название -->
-        <div class="bg-white rounded-lg shadow p-4 sm:p-6 mb-3 sm:mb-4">
-          <label class="block text-sm font-medium mb-1">Название ТЗ</label>
-          <input v-model="editTitle" type="text" class="w-full border rounded px-3 py-2 text-sm sm:text-base" />
+        <div class="card bg-base-100 shadow-md mb-3 sm:mb-4">
+          <div class="card-body p-4 sm:p-6">
+            <div class="form-control">
+              <label class="label"><span class="label-text">Название ТЗ</span></label>
+              <input v-model="editTitle" type="text" class="input input-bordered w-full" />
+            </div>
+          </div>
         </div>
 
         <!-- Секции -->
         <div v-for="(section, sIdx) in editSections" :key="sIdx"
-          class="bg-white rounded-lg shadow p-4 sm:p-6 mb-3 sm:mb-4">
-          <div class="flex items-start sm:items-center justify-between mb-3 sm:mb-4 gap-2">
-            <input v-model="section.title" type="text"
-              class="text-base sm:text-lg font-semibold border-b border-transparent hover:border-gray-300 focus:border-blue-500 outline-none flex-1 min-w-0"
-              placeholder="Название раздела" />
-            <button @click="removeSection(sIdx)"
-              class="text-red-400 hover:text-red-600 text-xs sm:text-sm shrink-0">
-              Удалить
-            </button>
-          </div>
+          class="card bg-base-100 shadow-md mb-3 sm:mb-4">
+          <div class="card-body p-4 sm:p-6">
+            <div class="flex items-start sm:items-center justify-between mb-3 sm:mb-4 gap-2">
+              <input v-model="section.title" type="text"
+                class="input input-ghost text-base sm:text-lg font-semibold flex-1 min-w-0 px-0"
+                placeholder="Название раздела" />
+              <button @click="removeSection(sIdx)"
+                class="btn btn-ghost btn-xs text-error shrink-0">
+                Удалить
+              </button>
+            </div>
 
-          <div v-for="(item, iIdx) in section.items" :key="iIdx"
-            class="mb-3">
-            <div class="flex gap-2 items-start">
-              <span class="text-gray-400 mt-2 text-xs sm:text-sm shrink-0">{{ sIdx + 1 }}.{{ iIdx + 1 }}</span>
-              <div class="flex-1 min-w-0">
-                <textarea v-model="item.content" rows="2"
-                  class="w-full border rounded px-3 py-2 text-sm"
-                  placeholder="Описание пункта"></textarea>
-                <div class="flex gap-2 items-center mt-1">
-                  <input v-model.number="item.timeEstimate" type="number" min="0"
-                    class="w-20 border rounded px-2 py-1.5 text-xs sm:text-sm"
-                    placeholder="мин" />
-                  <span class="text-xs text-gray-400">мин</span>
-                  <button @click="removeItem(sIdx, iIdx)"
-                    class="text-red-400 hover:text-red-600 text-xs ml-auto">Удалить</button>
+            <div v-for="(item, iIdx) in section.items" :key="iIdx"
+              class="mb-3">
+              <div class="flex gap-2 items-start">
+                <span class="text-base-content/40 mt-2 text-xs sm:text-sm shrink-0">{{ sIdx + 1 }}.{{ iIdx + 1 }}</span>
+                <div class="flex-1 min-w-0">
+                  <textarea v-model="item.content" rows="2"
+                    class="textarea textarea-bordered w-full text-sm"
+                    placeholder="Описание пункта"></textarea>
+                  <div class="flex gap-2 items-center mt-1">
+                    <input v-model.number="item.timeEstimate" type="number" min="0"
+                      class="input input-bordered input-sm w-20"
+                      placeholder="мин" />
+                    <span class="text-xs text-base-content/40">мин</span>
+                    <button @click="removeItem(sIdx, iIdx)"
+                      class="btn btn-ghost btn-xs text-error ml-auto">Удалить</button>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          <button @click="addItem(sIdx)"
-            class="text-blue-500 hover:text-blue-700 text-sm">
-            + Добавить пункт
-          </button>
+            <button @click="addItem(sIdx)"
+              class="btn btn-ghost btn-sm text-primary">
+              + Добавить пункт
+            </button>
+          </div>
         </div>
 
         <!-- Кнопки -->
         <div class="flex flex-wrap gap-3 sm:gap-4">
-          <button @click="addSection"
-            class="bg-gray-200 px-4 py-2 rounded hover:bg-gray-300 text-sm sm:text-base">
+          <button @click="addSection" class="btn btn-ghost">
             + Добавить раздел
           </button>
           <button @click="saveChanges" :disabled="isSaving"
-            class="bg-green-500 text-white px-4 sm:px-6 py-2 rounded hover:bg-green-600 disabled:opacity-50 text-sm sm:text-base">
+            class="btn btn-success">
+            <span v-if="isSaving" class="loading loading-spinner loading-sm"></span>
             {{ isSaving ? 'Сохранение...' : 'Сохранить' }}
           </button>
-          <button @click="cancelEditing"
-            class="bg-gray-200 px-4 py-2 rounded hover:bg-gray-300 text-sm sm:text-base">
+          <button @click="cancelEditing" class="btn btn-ghost">
             Отмена
           </button>
         </div>

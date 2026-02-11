@@ -27,33 +27,35 @@ async function handleSubmit(){
 <template>
   <form @submit.prevent="handleSubmit" class="space-y-4">
     <h2 class="text-2xl font-bold">Вход</h2>
-    <div v-if="error" class="bg-red-100 text-red-700 p-3 rounded">
-      {{ error }}
+    <div v-if="error" role="alert" class="alert alert-error">
+      <span>{{ error }}</span>
     </div>
-    <div>
-      <label class="block text-sm font-medium mb-1">Email</label>
+    <div class="form-control">
+      <label class="label"><span class="label-text">Email</span></label>
       <input
       v-model = "email"
       type="email"
       required
-      class="w-full border rounded px-3 py-2"
+      class="input input-bordered w-full"
+      placeholder="your@email.com"
       >
     </div>
 
-    <div>
-      <label class="block text-sm font-medium mb-1">Пароль</label>
+    <div class="form-control">
+      <label class="label"><span class="label-text">Пароль</span></label>
       <input
       v-model="password"
       type="password"
       required
-      class="w-full border rounded px-3 py-2"
+      class="input input-bordered w-full"
       >
     </div>
     <button
     type="submit"
     :disabled = "loading"
-    class="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600 disabled:opacity-50"
+    class="btn btn-primary w-full"
     >
+      <span v-if="loading" class="loading loading-spinner loading-sm"></span>
       {{ loading ? "Вход..." : "Войти" }}
     </button>
   </form>

@@ -20,14 +20,6 @@ function toggle() {
   }
 }
 
-
-// ========================================
-// defineEmits — объявляем события компонента
-//
-// Родительский компонент (RecordPage) сможет слушать:
-// <SpeechRecorder @transcriptReady="onTranscriptReady" />
-// ========================================
-
 const emit = defineEmits(
     ['transcriptReady']
 )
@@ -44,13 +36,13 @@ function useTrancript() {
     <h1 class="text-xl sm:text-2xl font-bold mb-4 sm:mb-6">Голосовой ввод</h1>
 
     <!-- Браузер не поддерживает -->
-    <div v-if="!isSupported" class="bg-red-100 text-red-700 p-4 rounded mb-4">
-      Ваш браузер не поддерживает распознавание речи. Используйте Chrome или Edge.
+    <div v-if="!isSupported" role="alert" class="alert alert-error mb-4">
+      <span>Ваш браузер не поддерживает распознавание речи. Используйте Chrome или Edge.</span>
     </div>
 
     <!-- Ошибка -->
-    <div v-if="error" class="bg-yellow-100 text-yellow-700 p-4 rounded mb-4">
-      {{ error }}
+    <div v-if="error" role="alert" class="alert alert-warning mb-4">
+      <span>{{ error }}</span>
     </div>
 
     <!-- Кнопки -->
@@ -59,48 +51,46 @@ function useTrancript() {
           @click="toggle"
           :disabled="!isSupported"
           :class="[
-          'px-4 sm:px-6 py-3 rounded font-medium text-sm sm:text-base',
-          isListening
-            ? 'bg-red-500 hover:bg-red-600 text-white'
-            : 'bg-blue-500 hover:bg-blue-600 text-white',
-          !isSupported && 'opacity-50 cursor-not-allowed'
+          'btn',
+          isListening ? 'btn-error' : 'btn-primary',
         ]"
       >
-        {{ isListening ? '⏹ Остановить' : '🎤 Начать запись' }}
+        {{ isListening ? 'Остановить' : 'Начать запись' }}
       </button>
       <button v-if="transcript"
       @click="useTrancript"
-              class="px-4 sm:px-6 py-3 rounded bg-green-500 hover:bg-green-600 text-white font-medium text-sm sm:text-base"
+              class="btn btn-success"
       >
       Создать ТЗ
       </button>
       <button
           v-if="transcript"
           @click="clear"
-          class="px-4 sm:px-6 py-3 rounded bg-gray-200 hover:bg-gray-300 text-sm sm:text-base"
+          class="btn btn-ghost"
       >
         Очистить
       </button>
     </div>
 
     <!-- Индикатор записи -->
-    <div v-if="isListening" class="flex items-center gap-2 text-red-500 mb-4">
-      <span class="w-3 h-3 bg-red-500 rounded-full animate-pulse"></span>
+    <div v-if="isListening" class="flex items-center gap-2 text-error mb-4">
+      <span class="loading loading-dots loading-sm"></span>
       Запись...
     </div>
 
-    <!-- Текст -->
-    <div class="border rounded p-3 sm:p-4 min-h-[150px] sm:min-h-[200px] bg-white text-sm sm:text-base">
-      <template v-if="transcript || interimTranscript">
-        {{ transcript }}<span class="text-gray-400">{{ interimTranscript }}</span>
-      </template>
-      <span v-else class="text-gray-400">
-        Нажмите "Начать запись" и говорите...
+    <!-- Текст — textarea для записи голоса и ручного ввода -->
+    <div class="relative">
+      <textarea v-model="transcript" rows="8"
+                class="textarea textarea-bordered w-full text-sm sm:text-base resize-y"
+                placeholder="Нажмите 'Начать запись' и говорите, или введите текст вручную..."></textarea>
+      <span v-if="interimTranscript"
+            class="absolute bottom-3 left-3 text-base-content/40 text-sm pointer-events-none">
+        {{ interimTranscript }}
       </span>
     </div>
 
     <!-- Статистика -->
-    <div v-if="transcript" class="mt-4 text-sm text-gray-500">
+    <div v-if="transcript" class="mt-4 text-sm text-base-content/50">
       Символов: {{ transcript.length }}
     </div>
   </div>

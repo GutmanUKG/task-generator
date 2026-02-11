@@ -1,44 +1,51 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import api from '../api'
+import { useRouter, useRoute } from 'vue-router'
+import api from '../api';
 
 const router = useRouter()
+const route = useRoute()
 
-// ========================================
-// Состояние
-// ========================================
-const voiceText = ref('')           // Исходный текст из голоса
-const title = ref('')               // Название ТЗ
-const projectId = ref(null)         // Выбранный проект
-const projects = ref([])            // Список проектов для выбора
-const sections = ref([])            // Разделы ТЗ (результат AI)
-const isStructuring = ref(false)    // AI обрабатывает текст
+const voiceText = ref('')
+const title = ref('')
+const projectId = ref(null)
+const projects = ref([])
+const sections = ref([])
+const isStructuring = ref(false)
 const isSaving = ref(false)
 const error = ref('')
 
-// ========================================
-// При открытии страницы:
-// 1. Получаем текст из sessionStorage (записан на RecordPage)
-// 2. Загружаем список проектов
-// ========================================
+const crmSystems = ref([])
+const selectedCrm = ref('bitrix')
+
+const prompts = ref([])
+const selectedPromptId = ref(null)
+
 onMounted(async () => {
   voiceText.value = sessionStorage.getItem('voiceText') || ''
 
   try {
-    const response = await api.get('/projects')
-    projects.value = response.data
+    const [projectsRes, crmRes] = await Promise.all([
+        api.get('/projects'),
+        api.get('/crm/systems')
+    ])
+    projects.value = projectsRes.data
+    crmSystems.value = crmRes.data
+
+    if (route.query.projectId) {
+      projectId.value = parseInt(route.query.projectId)
+    }
+    const response = await api.get('/prompts')
+    prompts.value = response.data
+    const defaultPrompt = prompts.value.find(p => p.isDefault)
+    if (defaultPrompt) {
+      selectedPromptId.value = defaultPrompt.id
+    }
   } catch (e) {
     console.error(e)
   }
 })
 
-// ========================================
-// Отправить текст на AI-структурирование
-//
-// POST /api/ai/structure — принимает { text }
-// Возвращает { sections: [{ title, items: [{ content }] }] }
-// ========================================
 async function structureWithAI() {
   if (!voiceText.value.trim()) {
     error.value = 'Введите или запишите текст'
@@ -50,7 +57,9 @@ async function structureWithAI() {
 
   try {
     const response = await api.post('/ai/structure', {
-      text: voiceText.value
+      text: voiceText.value,
+      crm: selectedCrm.value !== 'none' ? selectedCrm.value : undefined,
+      promptId: selectedPromptId.value
     })
     sections.value = response.data.sections
   } catch (e) {
@@ -60,9 +69,6 @@ async function structureWithAI() {
   }
 }
 
-// ========================================
-// Ручное добавление раздела
-// ========================================
 function addSection() {
   sections.value.push({
     title: 'Новый раздел',
@@ -70,9 +76,6 @@ function addSection() {
   })
 }
 
-// ========================================
-// Добавить пункт в раздел
-// ========================================
 function addItem(sectionIndex) {
   sections.value[sectionIndex].items.push({
     content: '',
@@ -80,26 +83,14 @@ function addItem(sectionIndex) {
   })
 }
 
-// ========================================
-// Удалить пункт из раздела
-// ========================================
 function removeItem(sectionIndex, itemIndex) {
   sections.value[sectionIndex].items.splice(itemIndex, 1)
 }
 
-// ========================================
-// Удалить раздел целиком
-// ========================================
 function removeSection(index) {
   sections.value.splice(index, 1)
 }
 
-// ========================================
-// Сохранить ТЗ
-//
-// POST /api/specifications — создаёт ТЗ со вложенными
-// секциями и пунктами (Prisma nested create)
-// ========================================
 async function save() {
   if (!title.value.trim()) {
     error.value = 'Введите название ТЗ'
@@ -112,12 +103,12 @@ async function save() {
 
   isSaving.value = true
   try {
-    const response = await api.post('/specifications/generate', {
-      text: voiceText.value,
-      projectId: projectId.value
+    const response = await api.post('/specifications', {
+      title: title.value,
+      projectId: projectId.value,
+      sections: sections.value
     })
 
-    // Очищаем sessionStorage и переходим к ТЗ
     sessionStorage.removeItem('voiceText')
     router.push(`/specifications/${response.data.id}`)
   } catch (e) {
@@ -132,91 +123,124 @@ async function save() {
   <div class="max-w-4xl mx-auto">
     <h1 class="text-xl sm:text-2xl font-bold mb-4 sm:mb-6">Новое техническое задание</h1>
 
-    <div v-if="error" class="bg-red-100 text-red-700 p-3 rounded mb-4">
-      {{ error }}
+    <div v-if="error" role="alert" class="alert alert-error mb-4">
+      <span>{{ error }}</span>
     </div>
 
     <!-- Основные поля -->
-    <div class="bg-white rounded-lg shadow p-6 mb-6 space-y-4">
-      <div>
-        <label class="block text-sm font-medium mb-1">Название ТЗ</label>
-        <input v-model="title" type="text" class="w-full border rounded px-3 py-2"
-               placeholder="Например: Разработка интернет-магазина" />
-      </div>
+    <div class="card bg-base-100 shadow-md mb-6">
+      <div class="card-body space-y-4">
+        <div class="form-control">
+          <label class="label"><span class="label-text">Название ТЗ</span></label>
+          <input v-model="title" type="text" class="input input-bordered w-full"
+                 placeholder="Например: Разработка интернет-магазина" />
+        </div>
 
-      <div>
-        <label class="block text-sm font-medium mb-1">Проект</label>
-        <select v-model="projectId" class="w-full border rounded px-3 py-2">
-          <option :value="null" disabled>Выберите проект</option>
-          <option v-for="p in projects" :key="p.id" :value="p.id">
-            {{ p.name }}
-          </option>
-        </select>
+        <div class="form-control">
+          <label class="label"><span class="label-text">Проект</span></label>
+          <select v-model="projectId" class="select select-bordered w-full">
+            <option :value="null" disabled>Выберите проект</option>
+            <option v-for="p in projects" :key="p.id" :value="p.id">
+              {{ p.name }}
+            </option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card bg-base-100 shadow-md mb-6">
+      <div class="card-body">
+        <div class="form-control">
+          <label class="label"><span class="label-text">CRM / Платформа</span></label>
+          <select v-model="selectedCrm" class="select select-bordered w-full">
+            <option v-for="crm in crmSystems" :key="crm.id" :value="crm.id">{{crm.name}}</option>
+          </select>
+          <label class="label">
+            <span class="label-text-alt">AI учтёт специфику платформы при оценке задач и формулировках</span>
+          </label>
+        </div>
       </div>
     </div>
 
     <!-- Голосовой текст -->
-    <div class="bg-white rounded-lg shadow p-6 mb-6">
-      <label class="block text-sm font-medium mb-2">Текст из голосового ввода</label>
-      <textarea v-model="voiceText" rows="6" class="w-full border rounded px-3 py-2"
-                placeholder="Вставьте текст или запишите голос на странице 'Записать'"></textarea>
+    <div class="card bg-base-100 shadow-md mb-6">
+      <div class="card-body">
+        <div class="form-control">
+          <label class="label"><span class="label-text">Текст из голосового ввода</span></label>
+          <textarea v-model="voiceText" rows="6" class="textarea textarea-bordered w-full"
+                    placeholder="Вставьте текст или запишите голос на странице 'Записать'"></textarea>
+        </div>
 
-      <button @click="structureWithAI" :disabled="isStructuring"
-              class="mt-3 bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600 disabled:opacity-50">
-        {{ isStructuring ? 'AI обрабатывает...' : 'Структурировать через AI' }}
-      </button>
+        <!-- Селектор промпта -->
+        <div class="mt-3 flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+          <select v-model="selectedPromptId"
+                  class="select select-bordered select-sm flex-1 sm:max-w-xs">
+            <option :value="null">Стандартный промпт</option>
+            <option v-for="p in prompts" :key="p.id" :value="p.id">
+              {{ p.title }}
+            </option>
+          </select>
+
+          <button @click="structureWithAI" :disabled="isStructuring"
+                  class="btn btn-secondary btn-sm sm:btn-md">
+            <span v-if="isStructuring" class="loading loading-spinner loading-sm"></span>
+            {{ isStructuring ? 'AI обрабатывает...' : 'Структурировать через AI' }}
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Разделы и пункты -->
     <div class="space-y-4 mb-6">
       <div v-for="(section, sIdx) in sections" :key="sIdx"
-           class="bg-white rounded-lg shadow p-6">
-        <div class="flex items-center justify-between mb-4">
-          <input v-model="section.title" type="text"
-                 class="text-lg font-semibold border-b border-transparent hover:border-gray-300 focus:border-blue-500 outline-none flex-1"
-                 placeholder="Название раздела" />
-          <button @click="removeSection(sIdx)"
-                  class="text-red-400 hover:text-red-600 ml-4 text-sm">
-            Удалить раздел
-          </button>
-        </div>
-
-        <!-- Пункты раздела -->
-        <div v-for="(item, iIdx) in section.items" :key="iIdx"
-             class="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-3 items-stretch sm:items-start">
-          <div class="flex gap-2 sm:gap-3 items-start flex-1">
-            <span class="text-gray-400 mt-2 text-sm shrink-0">{{ sIdx + 1 }}.{{ iIdx + 1 }}</span>
-            <textarea v-model="item.content" rows="2"
-                      class="flex-1 border rounded px-3 py-2 text-sm"
-                      placeholder="Описание пункта"></textarea>
-          </div>
-          <div class="flex gap-2 items-center sm:items-start pl-7 sm:pl-0">
-            <input v-model.number="item.timeEstimate" type="number" min="0"
-                   class="w-20 border rounded px-2 py-2 text-sm"
-                   placeholder="мин" title="Оценка времени (минуты)" />
-            <button @click="removeItem(sIdx, iIdx)"
-                    class="text-red-400 hover:text-red-600">
-              &times;
+           class="card bg-base-100 shadow-md">
+        <div class="card-body">
+          <div class="flex items-center justify-between mb-4">
+            <input v-model="section.title" type="text"
+                   class="input input-ghost text-lg font-semibold flex-1 px-0"
+                   placeholder="Название раздела" />
+            <button @click="removeSection(sIdx)"
+                    class="btn btn-ghost btn-sm text-error ml-4">
+              Удалить раздел
             </button>
           </div>
-        </div>
 
-        <button @click="addItem(sIdx)"
-                class="text-blue-500 hover:text-blue-700 text-sm">
-          + Добавить пункт
-        </button>
+          <!-- Пункты раздела -->
+          <div v-for="(item, iIdx) in section.items" :key="iIdx"
+               class="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-3 items-stretch sm:items-start">
+            <div class="flex gap-2 sm:gap-3 items-start flex-1">
+              <span class="text-base-content/40 mt-2 text-sm shrink-0">{{ sIdx + 1 }}.{{ iIdx + 1 }}</span>
+              <textarea v-model="item.content" rows="2"
+                        class="textarea textarea-bordered flex-1 text-sm"
+                        placeholder="Описание пункта"></textarea>
+            </div>
+            <div class="flex gap-2 items-center sm:items-start pl-7 sm:pl-0">
+              <input v-model.number="item.timeEstimate" type="number" min="0"
+                     class="input input-bordered input-sm w-20"
+                     placeholder="мин" title="Оценка времени (минуты)" />
+              <button @click="removeItem(sIdx, iIdx)"
+                      class="btn btn-ghost btn-sm text-error">
+                &times;
+              </button>
+            </div>
+          </div>
+
+          <button @click="addItem(sIdx)"
+                  class="btn btn-ghost btn-sm text-primary">
+            + Добавить пункт
+          </button>
+        </div>
       </div>
     </div>
 
     <!-- Кнопки -->
     <div class="flex flex-wrap gap-3 sm:gap-4">
-      <button @click="addSection"
-              class="bg-gray-200 px-4 py-2 rounded hover:bg-gray-300 text-sm sm:text-base">
+      <button @click="addSection" class="btn btn-ghost">
         + Добавить раздел
       </button>
 
-      <button @click="save" :disabled="isSaving"
-              class="bg-green-500 text-white px-4 sm:px-6 py-2 rounded hover:bg-green-600 disabled:opacity-50 text-sm sm:text-base">
+      <button @click="save" :disabled="isSaving" class="btn btn-success">
+        <span v-if="isSaving" class="loading loading-spinner loading-sm"></span>
         {{ isSaving ? 'Сохранение...' : 'Сохранить ТЗ' }}
       </button>
     </div>

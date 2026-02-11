@@ -55,10 +55,25 @@ const routers = [
             {
                 path: 'specifications/:id',
                 component: () => import('../pages/SpecificationPage.vue')
+            },
+            {
+                path: 'admin/users',
+                component: () => import('../pages/AdminUsersPage.vue'),
+                meta: { requiresAdmin: true }
+            },
+            {
+                path: '/admin/users/:id',
+                component: () => import('../pages/AdminUserPage.vue'),
+                meta: {requiresAdmin: true}
+            },
+            {
+                path: 'prompts',
+                component : () => import('../pages/PromptsPage.vue')
             }
 
         ]
     }
+
 ]
 const router = createRouter({
     history: createWebHistory(),
@@ -81,8 +96,12 @@ router.beforeEach((to, from, next) =>{
     }else if(to.meta.guest && isAuth){
         // Страница для гостей, но пользователь уже вошёл
         next('/dashboard')
+    }else if(to.meta.requiresAdmin && authStore.user?.role !== 'admin'){
+        // Нужен админ, но пользователь не админ — на дашборд
+        next('/dashboard')
     }else{
         next()
     }
 })
+
 export default router

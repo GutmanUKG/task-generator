@@ -12,15 +12,17 @@ function onSuccess (){
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-gray-100">
-    <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
-      <login-form @success="onSuccess"></login-form>
-      <p class="mt-4 text-center text-sm text-gray-500">
-        Нет аккаунта?
-        <router-link to="/register" class="text-blue-500 hover:underline">
-          Зарегистрироваться
-        </router-link>
-      </p>
+  <div class="min-h-screen flex items-center justify-center bg-base-200">
+    <div class="card bg-base-100 shadow-xl w-full max-w-md">
+      <div class="card-body">
+        <login-form @success="onSuccess"></login-form>
+        <p class="mt-4 text-center text-sm text-base-content/60">
+          Нет аккаунта?
+          <router-link to="/register" class="link link-primary">
+            Зарегистрироваться
+          </router-link>
+        </p>
+      </div>
     </div>
   </div>
 </template>

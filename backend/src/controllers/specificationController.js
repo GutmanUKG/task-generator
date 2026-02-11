@@ -1,6 +1,8 @@
 const prisma = require('../db')
 const { structureText } = require('../services/aiService')
 
+const { extractText } = require('../services/documentService')
+
 /**
  * POST /api/specifications/generate
  *
@@ -11,7 +13,7 @@ const { structureText } = require('../services/aiService')
 
 async function generate(req, res) {
     try{
-        const {text, projectId} = req.body
+        const {text, projectId , promptId} = req.body
         // Валидация
         if (!text || !text.trim()) {
             return res.status(400).json({ error: 'Текст не может быть пустым' })
@@ -32,7 +34,20 @@ async function generate(req, res) {
         // structureText отправляет текст в Ollama
         // и возвращает { title, sections: [...] }
         // ========================================
-        const structured = await structureText(text)
+
+        // ========================================
+        // Если передан promptId — используем кастомный промпт
+        // ========================================
+        let customPrompt = null
+        if(promptId) {
+            const prompt = await prisma.prompt.findFirst({
+                where: { id: promptId, userId: req.userId }
+            })
+            if (prompt) {
+                customPrompt = prompt.content
+            }
+        }
+        const structured = await structureText(text, customPrompt)
 
         // ========================================
         // Сохранение в БД
@@ -102,7 +117,10 @@ async function getById(req, res){
                     orderBy: {position: 'asc'},
                     include: {
                         items: {
-                            orderBy: {position: 'asc'}
+                            orderBy: {position: 'asc'},
+                            include: {
+                                attachments: true
+                            }
                         }
                     }
                 }
@@ -270,4 +288,120 @@ async function  update(req, res) {
 //     }
 // }
 
-module.exports = {generate,  getById, getAll, update }
+
+/**
+ * POST /api/specifications/upload-doc
+ *
+ * Загрузить документ и извлечь из него текст.
+ * Возвращает текст, который фронтенд может показать
+ * пользователю и потом отправить на AI-структурирование.
+ */
+
+async function uploadDocument(req, res) {
+    try{
+        if(!req.file){
+            return res.status(400).json({ error: 'Файл не загружен' })
+        }
+        const text = await extractText(req.file.path, req.file.mimetype)
+
+        if (!text || !text.trim()) {
+            return res.status(400).json({ error: 'Не удалось извлечь текст из документа' })
+        }
+        res.json({
+            text: text.trim(),
+            filename: req.file.originalname
+        })
+    }catch (error) {
+        console.error('Ошибка обработки документа:', error)
+        res.status(500).json({ error: error.message || 'Ошибка обработки документа' })
+    }
+}
+/**
+ * POST /api/specifications
+ *
+ * Сохраняет ТЗ с уже готовыми секциями и пунктами (без вызова AI).
+ * Используется после того как пользователь структурировал текст
+ * через AI, отредактировал результат и нажал "Сохранить".
+ *
+ * Body: { title, projectId, sections: [{ title, items: [{ content, timeEstimate }] }] }
+ */
+async function create(req, res) {
+    try {
+        const { title, projectId, sections } = req.body
+
+        if (!title || !title.trim()) {
+            return res.status(400).json({ error: 'Название ТЗ обязательно' })
+        }
+        if (!projectId) {
+            return res.status(400).json({ error: 'projectId обязателен' })
+        }
+
+        // Проверяем что проект принадлежит пользователю
+        const project = await prisma.project.findFirst({
+            where: { id: projectId, userId: req.userId }
+        })
+        if (!project) {
+            return res.status(404).json({ error: 'Проект не найден' })
+        }
+
+        const specification = await prisma.specification.create({
+            data: {
+                title,
+                projectId,
+                userId: req.userId,
+                sections: {
+                    create: (sections || []).map((section, sIdx) => ({
+                        title: section.title,
+                        position: sIdx,
+                        items: {
+                            create: (section.items || []).map((item, iIdx) => ({
+                                content: item.content,
+                                timeEstimate: item.timeEstimate || null,
+                                position: iIdx
+                            }))
+                        }
+                    }))
+                }
+            },
+            include: {
+                sections: {
+                    orderBy: { position: 'asc' },
+                    include: {
+                        items: { orderBy: { position: 'asc' } }
+                    }
+                }
+            }
+        })
+
+        res.status(201).json(specification)
+    } catch (error) {
+        console.error('Ошибка создания ТЗ:', error)
+        res.status(500).json({ error: 'Ошибка сервера' })
+    }
+}
+
+/**
+ * DELETE /api/specifications/:id
+ *
+ * Удалить ТЗ (каскадно удалятся секции и пункты)
+ */
+async function remove(req, res) {
+    try {
+        const id = parseInt(req.params.id)
+
+        const existing = await prisma.specification.findFirst({
+            where: { id, userId: req.userId }
+        })
+        if (!existing) {
+            return res.status(404).json({ error: 'ТЗ не найдено' })
+        }
+
+        await prisma.specification.delete({ where: { id } })
+        res.json({ message: 'ТЗ удалено' })
+    } catch (error) {
+        console.error('Ошибка удаления ТЗ:', error)
+        res.status(500).json({ error: 'Ошибка сервера' })
+    }
+}
+
+module.exports = { generate, create, getById, getAll, update, remove, uploadDocument }
